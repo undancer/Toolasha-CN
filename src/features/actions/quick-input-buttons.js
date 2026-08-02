@@ -461,6 +461,9 @@ class QuickInputButtons {
                             `  - ${simSprite}Scroll of Action Speed: +${formatPercentage(personalSpeedBonus, 1)}`
                         );
                     }
+                    if (speedBreakdown.guild > 0) {
+                        speedLines.push(`  - Guild Shrine: +${speedBreakdown.guild.toFixed(1)}%`);
+                    }
                 }
 
                 // Task Speed section (multiplicative, separate from equipment speed)
@@ -579,6 +582,9 @@ class QuickInputButtons {
                         ? scrollSpriteHtml('/buff_types/efficiency')
                         : '';
                     speedLines.push(`  - ${simSprite}Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(2)}%`);
+                }
+                if (efficiencyBreakdown.guildEfficiency > 0) {
+                    speedLines.push(`  - Guild Shrine: +${efficiencyBreakdown.guildEfficiency.toFixed(2)}%`);
                 }
 
                 // Total time (dynamic)
@@ -817,6 +823,26 @@ class QuickInputButtons {
             if (levelProgressSection && !hideLevelProgress) {
                 lastInserted.insertAdjacentElement('afterend', levelProgressSection);
             }
+
+            // Merge top and bottom into a single scrolling unit.
+            // The game splits the panel into a scrollable top (SkillActionDetail_content)
+            // and a fixed bottom (SkillActionDetail_actionContainer). We unify them by:
+            // 1. Removing the top section's independent scroll
+            // 2. Removing our previous bottom-only scroll constraint
+            // 3. Constraining the parent (regularComponent) as the single scroll container
+            const actionContainer = inputContainer.parentElement;
+            const regularComponent = actionContainer?.closest('[class*="SkillActionDetail_regularComponent"]');
+            if (actionContainer && regularComponent) {
+                const contentEl = regularComponent.querySelector('[class*="SkillActionDetail_content"]');
+                if (contentEl) {
+                    contentEl.style.overflow = 'visible';
+                }
+                actionContainer.style.maxHeight = '';
+                actionContainer.style.overflowY = '';
+                const maxH = Math.max(300, Math.floor(window.innerHeight * 0.96 - 20));
+                regularComponent.style.maxHeight = maxH + 'px';
+                regularComponent.style.overflowY = 'auto';
+            }
         } catch (error) {
             console.error('[Toolasha] Error injecting quick input buttons:', error);
         } finally {
@@ -836,6 +862,12 @@ class QuickInputButtons {
         }
         document.querySelectorAll('.mwi-collapsible-section').forEach((section) => section.remove());
         document.querySelectorAll('.mwi-quick-input-btn').forEach((button) => button.remove());
+        document.querySelectorAll('[class*="SkillActionDetail_regularComponent"]').forEach((el) => {
+            el.style.maxHeight = '';
+            el.style.overflowY = '';
+            const content = el.querySelector('[class*="SkillActionDetail_content"]');
+            if (content) content.style.overflow = '';
+        });
         this.isInitialized = false;
     }
 
@@ -972,6 +1004,19 @@ class QuickInputButtons {
         const consumableSpeed = this.getConsumableSpeed(actionData, equipment, itemDetailMap);
         breakdown.consumables = consumableSpeed;
         breakdown.total += consumableSpeed.reduce((sum, c) => sum + c.speed, 0);
+
+        // Guild shrine action speed
+        const guildBuffs = dataManager.characterData?.guildActionTypeBuffsMap?.[actionData.type] || [];
+        const guildSpeed =
+            guildBuffs.reduce(
+                (sum, b) =>
+                    b.typeHrid === '/buff_types/action_speed' ? sum + (b.flatBoost || 0) + (b.ratioBoost || 0) : sum,
+                0
+            ) * 100;
+        if (guildSpeed > 0) {
+            breakdown.guild = guildSpeed;
+            breakdown.total += guildSpeed;
+        }
 
         return breakdown;
     }
@@ -1313,6 +1358,9 @@ class QuickInputButtons {
                         : '';
                     lines.push(`    • ${simSprite}Scroll of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(2)}%`);
                 }
+                if (xpData.breakdown.guildWisdom > 0) {
+                    lines.push(`    • Guild Shrine: +${xpData.breakdown.guildWisdom.toFixed(2)}%`);
+                }
             }
 
             lines.push('');
@@ -1431,24 +1479,6 @@ class QuickInputButtons {
             console.error('[Toolasha] Error creating level progress section:', error);
             return null;
         }
-    }
-
-    /**
-     * Disable quick input buttons (cleanup)
-     */
-    disable() {
-        // Disconnect main observer
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
-        }
-
-        // Note: inputObserver and newInputObserver are created locally in injectQuickInputButtons()
-        // and attached to panels, which will be garbage collected when panels are removed.
-        // They cannot be explicitly disconnected here, but this is acceptable as they're
-        // short-lived observers tied to specific panel instances.
-
-        this.isActive = false;
     }
 }
 

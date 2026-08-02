@@ -13,6 +13,15 @@ if (branch.startsWith('release-please--')) {
     process.exit(0);
 }
 
+// Skip check during merges: the version change may come from the merged side
+// (e.g. an upstream release), which is not a manual bump.
+try {
+    execSync('git rev-parse -q --verify MERGE_HEAD');
+    process.exit(0);
+} catch {
+    // Not in a merge — continue with the normal check.
+}
+
 // Check if package.json is staged
 const stagedFiles = execSync('git diff --cached --name-only', { encoding: 'utf-8' });
 if (!stagedFiles.includes('package.json')) {

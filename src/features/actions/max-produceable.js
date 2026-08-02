@@ -58,6 +58,9 @@ class MaxProduceable {
         this.actionCompletedHandler = null;
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.pricingModeHandler = null; // Handler for pricing mode changes
+        this.maxProduceableHandler = null;
+        this.showProfitPerHourHandler = null;
+        this.showExpPerHourHandler = null;
         this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
         this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
         this.isInitialized = false;
@@ -72,10 +75,6 @@ class MaxProduceable {
      */
     async initialize() {
         if (this.isInitialized) {
-            return;
-        }
-
-        if (!config.getSetting('actionPanel_maxProduceable')) {
             return;
         }
 
@@ -111,10 +110,19 @@ class MaxProduceable {
         this.pricingModeHandler = () => {
             this.updateAllCounts();
         };
+        this.maxProduceableHandler = () => {
+            this.updateAllCounts();
+        };
+        this.showProfitPerHourHandler = () => {
+            this.updateAllCounts();
+        };
+        this.showExpPerHourHandler = () => {
+            this.updateAllCounts();
+        };
         config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
-        config.onSettingChange('actionPanel_maxProduceable', () => this.updateAllCounts());
-        config.onSettingChange('actionPanel_showProfitPerHour', () => this.updateAllCounts());
-        config.onSettingChange('actionPanel_showExpPerHour', () => this.updateAllCounts());
+        config.onSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
+        config.onSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
+        config.onSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
     }
 
     /**
@@ -233,6 +241,27 @@ class MaxProduceable {
             this.getResizeObserver().observe(display);
         }
 
+        // Register production panels with sort manager regardless of pin feature state.
+        // Gathering panels are registered by gathering-stats.js — skip them here to avoid
+        // overwriting their profit data with null.
+        if (isProductionAction) {
+            actionPanelSort.registerPanel(actionPanel, actionHrid);
+        }
+
+        // Create pin icon only when the pinned page feature is enabled
+        if (!config.getSetting('actions_pinnedPage')) {
+            this.actionElements.set(actionPanel, {
+                actionHrid,
+                displayElement: display,
+                pinElement: null,
+            });
+            if (display) {
+                this.updateCount(actionPanel);
+            }
+            actionPanelSort.triggerSort();
+            return;
+        }
+
         // Create pin icon (for ALL actions - gathering and production)
         const pinIcon = document.createElement('div');
         pinIcon.className = 'mwi-action-pin';
@@ -277,9 +306,6 @@ class MaxProduceable {
             displayElement: display,
             pinElement: pinIcon,
         });
-
-        // Register panel with shared sort manager
-        actionPanelSort.registerPanel(actionPanel, actionHrid);
 
         // Note: Profit calculation is deferred to updateAllCounts() in setupObserver()
         // This prevents 20-50 simultaneous API calls during character switch
@@ -488,8 +514,8 @@ class MaxProduceable {
         // can size each line immediately — avoids the multi-second flash of tiny
         // unsized text that occurred when sizing was deferred to addBestActionIndicators.
         const showMaxProduceable = config.getSetting('actionPanel_maxProduceable');
-        const showProfit = config.getSetting('actionPanel_showProfitPerHour');
-        const showExp = config.getSetting('actionPanel_showExpPerHour');
+        const showProfit = config.getSetting('actionPanel_showProfitPerHour_production');
+        const showExp = config.getSetting('actionPanel_showExpPerHour_production');
 
         let html = '';
 
@@ -955,6 +981,21 @@ class MaxProduceable {
         if (this.pricingModeHandler) {
             config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             this.pricingModeHandler = null;
+        }
+
+        if (this.maxProduceableHandler) {
+            config.offSettingChange('actionPanel_maxProduceable', this.maxProduceableHandler);
+            this.maxProduceableHandler = null;
+        }
+
+        if (this.showProfitPerHourHandler) {
+            config.offSettingChange('actionPanel_showProfitPerHour_production', this.showProfitPerHourHandler);
+            this.showProfitPerHourHandler = null;
+        }
+
+        if (this.showExpPerHourHandler) {
+            config.offSettingChange('actionPanel_showExpPerHour_production', this.showExpPerHourHandler);
+            this.showExpPerHourHandler = null;
         }
 
         // Clear all DOM references

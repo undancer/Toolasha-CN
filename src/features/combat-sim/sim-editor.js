@@ -11,7 +11,6 @@ import {
     applyLoadoutSnapshotToDTO,
 } from './combat-sim-adapter.js';
 import loadoutSnapshot from '../combat/loadout-snapshot.js';
-import { getLoadoutSortOrder } from '../combat/loadout-sort.js';
 import { t } from '../../core/i18n.js';
 import { itemNameTranslator } from '../../utils/item-name-translator.js';
 import { getZoneDisplayName } from '../../utils/game-locale.js';
@@ -43,7 +42,6 @@ export class SimEditor {
         this._missingMembers = [];
         this._editorInitialized = false;
         this._selectedLoadoutName = '';
-        this._loadoutSortOrder = null;
     }
 
     getEditedDTOs() {
@@ -63,6 +61,17 @@ export class SimEditor {
     }
     getSelectedLoadoutName() {
         return this._selectedLoadoutName;
+    }
+
+    /**
+     * Apply a named loadout to the active player DTO and re-render.
+     * @param {string} loadoutName - Snapshot name to apply
+     */
+    applyLoadoutByName(loadoutName) {
+        if (!loadoutName || !this._editedDTOs) return;
+        this._selectedLoadoutName = loadoutName;
+        this._applyLoadoutToDTO(loadoutName);
+        this.renderEditor();
     }
 
     /**
@@ -94,7 +103,6 @@ export class SimEditor {
             this._activeEditPlayer = selfHrid;
             this._missingMembers = missingMembers;
             this._editorInitialized = true;
-            this._loadoutSortOrder = await getLoadoutSortOrder();
 
             this.renderEditor();
         } catch (error) {
@@ -305,15 +313,6 @@ export class SimEditor {
                 (s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat'
             );
 
-            if (this._loadoutSortOrder?.length) {
-                filteredSnapshots.sort((a, b) => {
-                    const aIdx = this._loadoutSortOrder.findIndex((o) => o.name === a.name);
-                    const bIdx = this._loadoutSortOrder.findIndex((o) => o.name === b.name);
-                    const aPos = aIdx === -1 ? Infinity : aIdx;
-                    const bPos = bIdx === -1 ? Infinity : bIdx;
-                    return aPos - bPos;
-                });
-            }
             html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
             if (filteredSnapshots.length > 0) {
                 html += `<label style="color:#888; font-size:11px; flex-shrink:0;">${t('Loadout')}</label>`;

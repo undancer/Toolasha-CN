@@ -399,6 +399,17 @@ class TaskRerollProtection {
     }
 
     /**
+     * Check if a task card is protected.
+     * @param {HTMLElement} taskCard
+     * @returns {boolean}
+     */
+    isTaskProtected(taskCard) {
+        const quest = this._getQuestFromCard(taskCard);
+        const hrid = quest?.actionHrid || quest?.monsterHrid || '';
+        return hrid ? this.protectedHrids.has(hrid) : false;
+    }
+
+    /**
      * Save protected list to storage.
      * @private
      */
@@ -770,4 +781,5 @@ export default {
     openConfigPopup: () => {
         taskRerollProtection.openConfigPopup();
     },
+    isTaskProtected: (taskCard) => taskRerollProtection.isTaskProtected(taskCard),
 };

@@ -10,14 +10,17 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
-import { displayEnhancementStats } from './enhancement-display.js';
+import { displayEnhancementStats, getProtectionItemFromUI } from './enhancement-display.js';
 import { displayGatheringProfit, displayProductionProfit } from './profit-display.js';
 import { getOriginalText } from '../../utils/dom.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import actionFilter from './action-filter.js';
 import { getActionHridFromName, getItemHridFromName } from '../../utils/game-lookups.js';
+import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -438,6 +441,69 @@ function isEnhanceTabActive(panel) {
 }
 
 /**
+ * Fill the Protect From Level input with the optimal value for the current item and target level.
+ * @param {HTMLElement} panel
+ * @param {string} itemHrid
+ */
+function autoFillProtectFrom(panel, itemHrid) {
+    const protectionItemHrid = getProtectionItemFromUI(panel);
+    if (!protectionItemHrid) return;
+
+    const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
+        (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+    );
+    const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+    const targetLevel = targetInput ? parseInt(targetInput.value, 10) : 0;
+    if (!targetLevel || targetLevel < 1) return;
+
+    const params = getEnhancingParams();
+    const pathResult = calculateEnhancementPath(itemHrid, targetLevel, params);
+    if (!pathResult?.optimalStrategy) return;
+
+    const optimalProtectFrom = pathResult.optimalStrategy.protectFrom;
+
+    const protectLabels = Array.from(panel.querySelectorAll('*')).filter(
+        (el) => el.textContent.trim() === 'Protect From Level' && el.children.length === 0
+    );
+    const protectInput = protectLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+    if (!protectInput) return;
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    if (protectInput.value === optimalProtectFrom.toString()) return;
+    nativeSetter.call(protectInput, optimalProtectFrom.toString());
+    protectInput.dispatchEvent(new Event('input', { bubbles: true }));
+    protectInput.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+/**
+ * Watch the protection item slot for changes and auto-fill protect-from level.
+ * @param {HTMLElement} panel
+ * @param {string} itemHrid
+ */
+function setupProtectionSlotObserver(panel, itemHrid) {
+    if (panel.dataset.mwiProtectObserverAdded) return;
+    panel.dataset.mwiProtectObserverAdded = 'true';
+
+    const protectionContainer = panel.querySelector('[class*="protectionItemInputContainer"]');
+    if (!protectionContainer) return;
+
+    let debounceTimer = null;
+    const unwatch = createMutationWatcher(
+        protectionContainer,
+        () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (config.getSetting('enhanceSim_autoProtectFrom')) {
+                    autoFillProtectFrom(panel, itemHrid);
+                }
+            }, 300);
+        },
+        { childList: true, subtree: true, attributes: true }
+    );
+    enhancingPanelWatchers.push(unwatch);
+}
+
+/**
  * Handle enhancing panel appearance
  * @param {HTMLElement} panel - Enhancing panel element
  */
@@ -506,6 +572,37 @@ async function handleEnhancingPanel(panel) {
     // Store itemHrid on panel for later reference (when new inputs are added)
     panel.dataset.mwiItemHrid = itemHrid;
 
+    // Auto-fill target level if configured and not yet applied for this item
+    if (panel.dataset.mwiAutoTargetFilledFor !== itemHrid) {
+        const autoTargetLevel = config.getSettingValue('enhanceSim_autoTargetLevel', 0);
+        if (autoTargetLevel >= 1 && autoTargetLevel <= 20) {
+            const labels = Array.from(panel.querySelectorAll('*')).filter(
+                (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+            );
+            if (labels.length > 0) {
+                const input = labels[0].parentElement?.querySelector('input[type="number"], input[type="text"]');
+                if (input) {
+                    const nativeSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype,
+                        'value'
+                    ).set;
+                    nativeSetter.call(input, autoTargetLevel.toString());
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+        }
+        panel.dataset.mwiAutoTargetFilledFor = itemHrid;
+    }
+
+    // Set up protection slot observer (checks setting internally on each change)
+    setupProtectionSlotObserver(panel, itemHrid);
+
+    // Auto-fill optimal protect-from level on initial load if setting is enabled
+    if (config.getSetting('enhanceSim_autoProtectFrom')) {
+        autoFillProtectFrom(panel, itemHrid);
+    }
+
     // Double-check tab state right before rendering (safety check for race conditions)
     if (!isEnhanceTabActive(panel)) {
         // Current Action tab became active during processing, don't render
@@ -517,6 +614,22 @@ async function handleEnhancingPanel(panel) {
 
     // Set up observers for Target Level and Protect From Level inputs
     setupInputObservers(panel, itemHrid);
+
+    // Re-trigger auto-fill when target level changes (handles race where target level loads after initial auto-fill)
+    if (!panel.dataset.mwiAutoProtectTargetListenerAdded) {
+        panel.dataset.mwiAutoProtectTargetListenerAdded = 'true';
+        const targetLabels = Array.from(panel.querySelectorAll('*')).filter(
+            (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
+        );
+        const targetInput = targetLabels[0]?.parentElement?.querySelector('input[type="number"], input[type="text"]');
+        if (targetInput) {
+            targetInput.addEventListener('change', () => {
+                if (config.getSetting('enhanceSim_autoProtectFrom')) {
+                    autoFillProtectFrom(panel, panel.dataset.mwiItemHrid);
+                }
+            });
+        }
+    }
 }
 
 /**

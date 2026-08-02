@@ -10,8 +10,9 @@ import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { guildXPTracker } from './guild-xp-tracker.js';
-import { formatWithSeparator, formatDateTime } from '../../utils/formatters.js';
+import { formatDateTime } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { fNum, rankBadge, addColumn, makeColumnSortable } from '../../utils/table-columns.js';
 
 const CSS_PREFIX = 'mwi-guild-xp';
 
@@ -42,27 +43,6 @@ function formatTimeLeft(ms) {
     if (ms < 6 * h1 && m >= 1) parts.push(`${m} ${t('minute')}${s(m)}`);
 
     return parts.join(' ') || t('< 1 minute');
-}
-
-/**
- * Format number with non-breaking spaces as thousands separator (for chart display).
- * @param {number} n
- * @returns {string}
- */
-function fNum(n) {
-    return formatWithSeparator(Math.round(n));
-}
-
-/**
- * Get ranking emoji for top 3 places.
- * @param {number} rank - 1-indexed rank
- * @returns {string} HTML
- */
-function rankBadge(rank) {
-    if (rank <= 3) {
-        return ['&#x1F947;', '&#x1F948;', '&#x1F949;'][rank - 1];
-    }
-    return `<span style="color: var(--color-disabled);">#${rank}</span>`;
 }
 
 // ─── Chart rendering ────────────────────────────────────────────────────────
@@ -194,166 +174,6 @@ function buildChart(chart) {
         </div>`;
 }
 
-// ─── Column sort helpers ────────────────────────────────────────────────────
-
-/**
- * Sort icon HTML.
- * @param {string} direction - 'asc', 'desc', or 'none'
- * @returns {string} HTML
- */
-function sortIcon(direction) {
-    return `<span class="${CSS_PREFIX}__sort-icon" style="display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 2px;">
-        <span style="font-size: 8px; line-height: 8px;">${direction === 'asc' ? '\u25B2' : '\u25B3'}</span>
-        <span style="font-size: 8px; line-height: 8px;">${direction === 'desc' ? '\u25BC' : '\u25BD'}</span>
-    </span>`;
-}
-
-/**
- * Make a column header sortable.
- * @param {HTMLElement} thEl - Header cell
- * @param {Object} options
- * @param {string} options.sortId - Unique sort identifier
- * @param {Function} options.valueGetter - (trEl) => number|string
- * @param {boolean} [options.skipFirst=false] - Skip first body row (sticky row)
- */
-function makeColumnSortable(thEl, options) {
-    const tableEl = thEl.closest('table');
-    if (!tableEl) return;
-
-    thEl.dataset.sortId = options.sortId;
-    thEl.style.cursor = 'pointer';
-    thEl.insertAdjacentHTML('beforeend', sortIcon('none'));
-
-    thEl.addEventListener('click', () => {
-        const tbodyEl = tableEl.querySelector('tbody');
-        if (!tbodyEl) return;
-
-        // Toggle direction
-        if (tableEl.dataset.sortId === options.sortId) {
-            tableEl.dataset.sortDirection = tableEl.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            tableEl.dataset.sortId = options.sortId;
-            tableEl.dataset.sortDirection = 'desc';
-        }
-
-        const direction = tableEl.dataset.sortDirection;
-
-        let rows = Array.from(tbodyEl.children);
-        if (options.skipFirst) {
-            rows = rows.slice(1);
-        }
-
-        rows.sort((a, b) => {
-            const av = options.valueGetter(a);
-            const bv = options.valueGetter(b);
-            if (typeof av === 'number' && typeof bv === 'number') {
-                return direction === 'asc' ? av - bv : bv - av;
-            }
-            const sa = String(av);
-            const sb = String(bv);
-            return direction === 'asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
-        });
-
-        for (const row of rows) {
-            tbodyEl.appendChild(row);
-        }
-
-        // Update all sort icons in this table
-        const theadTr = thEl.parentElement;
-        for (const th of theadTr.children) {
-            const icon = th.querySelector(`.${CSS_PREFIX}__sort-icon`);
-            if (icon) {
-                const d = th.dataset.sortId === tableEl.dataset.sortId ? direction : 'none';
-                icon.outerHTML = sortIcon(d);
-            }
-        }
-    });
-}
-
-/**
- * Add a column to a table.
- * @param {HTMLElement} tableEl
- * @param {Object} options
- * @param {string} options.name - Column header text
- * @param {Array} options.data - One value per body row
- * @param {Function} [options.format] - (value, index) => HTML string
- * @param {number} [options.insertAfter] - Column index to insert after
- * @param {boolean} [options.makeSortable] - Whether to make column sortable
- * @param {string} [options.sortId] - Sort identifier
- * @param {boolean} [options.skipFirst] - Skip first row for sorting (leaderboard)
- * @param {Array} [options.sortData] - Custom sort values (numbers) per row
- */
-function addColumn(tableEl, options) {
-    // Don't add duplicate columns
-    if (tableEl.querySelector(`th.${CSS_PREFIX}[data-name="${options.name}"]`)) return;
-
-    const theadTr = tableEl.querySelector('thead tr');
-    if (!theadTr) return;
-
-    const insertAfter = options.insertAfter !== undefined ? options.insertAfter : theadTr.children.length - 1;
-
-    // Add header
-    const th = document.createElement('th');
-    th.className = CSS_PREFIX;
-    th.dataset.name = options.name;
-    th.textContent = options.name;
-
-    if (insertAfter < theadTr.children.length - 1) {
-        theadTr.children[insertAfter + 1].insertAdjacentElement('beforebegin', th);
-    } else {
-        theadTr.appendChild(th);
-    }
-
-    // Add body cells
-    const tbodyEl = tableEl.querySelector('tbody');
-    const rows = Array.from(tbodyEl.children);
-
-    for (let i = 0; i < rows.length; i++) {
-        const td = document.createElement('td');
-        td.className = CSS_PREFIX;
-
-        const value = i < options.data.length ? options.data[i] : null;
-        if (options.format) {
-            td.innerHTML = options.format(value, i);
-        } else if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
-            td.textContent = '';
-        } else if (typeof value === 'number') {
-            td.textContent = fNum(value);
-        } else {
-            td.textContent = value;
-        }
-
-        // Store sort value
-        if (options.sortData) {
-            td._sortValue = options.sortData[i];
-        } else if (typeof value === 'number') {
-            td._sortValue = value;
-        }
-
-        const refChild = rows[i].children[insertAfter + 1];
-        if (refChild) {
-            refChild.insertAdjacentElement('beforebegin', td);
-        } else {
-            rows[i].appendChild(td);
-        }
-    }
-
-    // Make sortable
-    if (options.makeSortable) {
-        const colIndex = Array.from(theadTr.children).indexOf(th);
-        makeColumnSortable(th, {
-            sortId: options.sortId || options.name,
-            skipFirst: options.skipFirst || false,
-            valueGetter: (trEl) => {
-                const cell = trEl.children[colIndex];
-                if (cell && cell._sortValue !== undefined) return cell._sortValue;
-                const text = cell?.textContent?.replace(/[^\d.-]/g, '');
-                return text ? parseFloat(text) : 0;
-            },
-        });
-    }
-}
-
 // ─── Display class ──────────────────────────────────────────────────────────
 
 class GuildXPDisplay {
@@ -361,6 +181,7 @@ class GuildXPDisplay {
         this.initialized = false;
         this.unregisterObservers = [];
         this.timerRegistry = createTimerRegistry();
+        this._activityCellCache = {};
     }
 
     initialize() {
@@ -378,32 +199,84 @@ class GuildXPDisplay {
         );
         this.unregisterObservers.push(unregMembers);
 
-        // Watch for guild leaderboard
+        // Watch for guild leaderboard tab (only process tables inside GuildPanel)
         const unregLeaderboard = domObserver.onClass(
             'GuildXPDisplay-Leaderboard',
             'LeaderboardPanel_leaderboardTable',
-            (el) => this._renderLeaderboard(el)
+            (el) => {
+                if (el.closest('[class*="GuildPanel"]')) this._renderGuildLeaderboard(el);
+            }
         );
         this.unregisterObservers.push(unregLeaderboard);
+
+        const unregTrials = domObserver.onClass('GuildXPDisplay-Trials', 'GuildPanel_trialsContent', (el) =>
+            this._renderTrialSignups(el)
+        );
+        this.unregisterObservers.push(unregTrials);
 
         // Live refresh on data updates
         this._boundRefreshOverview = () => this._refreshOverviewIfVisible();
         this._boundRefreshMembers = () => this._refreshMembersIfVisible();
-        this._boundRefreshLeaderboard = (_data) => {
-            this._refreshLeaderboardIfVisible();
+        this._boundRefreshTrials = () => {
+            const el = document.querySelector('[class*="GuildPanel_trialsContent"]');
+            if (el) this._renderTrialSignups(el);
+        };
+        this._boundRefreshLeaderboard = (data) => {
+            if (data?.leaderboardCategory === 'guild') this._refreshGuildLeaderboardIfVisible();
         };
 
         webSocketHook.on('guild_updated', this._boundRefreshOverview);
+        webSocketHook.on('guild_characters_updated', this._boundRefreshOverview);
         webSocketHook.on('guild_characters_updated', this._boundRefreshMembers);
+        webSocketHook.on('guild_characters_updated', this._boundRefreshTrials);
+        webSocketHook.on('guild_updated', this._boundRefreshTrials);
+        webSocketHook.on('guild_trial_signup_updated', this._boundRefreshTrials);
         webSocketHook.on('leaderboard_updated', this._boundRefreshLeaderboard);
 
         this.unregisterObservers.push(() => {
             webSocketHook.off('guild_updated', this._boundRefreshOverview);
+            webSocketHook.off('guild_characters_updated', this._boundRefreshOverview);
             webSocketHook.off('guild_characters_updated', this._boundRefreshMembers);
+            webSocketHook.off('guild_characters_updated', this._boundRefreshTrials);
+            webSocketHook.off('guild_updated', this._boundRefreshTrials);
+            webSocketHook.off('guild_trial_signup_updated', this._boundRefreshTrials);
             webSocketHook.off('leaderboard_updated', this._boundRefreshLeaderboard);
         });
 
         this.initialized = true;
+
+        // Intercept clicks on Weekly XP column before React's string sort fires.
+        // Uses document-level capturing so we run before React's delegated handler.
+        // Identifies the column by its stable CSS class (not textContent, which changes
+        // when the user switches between Status and Contributions tabs on the same DOM element).
+        this._weeklyXPSortDir = 'desc';
+        this._weeklyXPClickHandler = (e) => {
+            const th = e.target.closest('[class*="GuildPanel_weeklyExperience"]');
+            if (!th) return;
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+
+            const table = th.closest('table');
+            if (!table) return;
+            const thead = table.querySelector('thead tr');
+            if (!thead) return;
+            const colIdx = Array.from(thead.children).indexOf(th);
+            const tbody = table.querySelector('tbody');
+            if (!tbody || colIdx < 0) return;
+
+            this._weeklyXPSortDir = this._weeklyXPSortDir === 'desc' ? 'asc' : 'desc';
+            const dir = this._weeklyXPSortDir;
+
+            const rows = Array.from(tbody.children);
+            rows.sort((a, b) => {
+                const av = this._parseWeeklyXP(a.children[colIdx]?.textContent?.trim() || '');
+                const bv = this._parseWeeklyXP(b.children[colIdx]?.textContent?.trim() || '');
+                return dir === 'asc' ? av - bv : bv - av;
+            });
+            for (const row of rows) tbody.appendChild(row);
+        };
+        document.addEventListener('click', this._weeklyXPClickHandler, true);
+        this.unregisterObservers.push(() => document.removeEventListener('click', this._weeklyXPClickHandler, true));
     }
 
     // ─── Overview tab ────────────────────────────────────────────────────────
@@ -442,7 +315,8 @@ class GuildXPDisplay {
                 </div>
             </div>`;
 
-        dataGridEl.insertAdjacentHTML('beforeend', statsHTML + chartHTML);
+        const idleHTML = this._buildIdleHTML();
+        dataGridEl.insertAdjacentHTML('beforeend', statsHTML + idleHTML + chartHTML);
 
         // Attach chart bar event listeners
         dataGridEl.querySelectorAll(`.${CSS_PREFIX}__bar`).forEach((bar) => {
@@ -466,6 +340,31 @@ class GuildXPDisplay {
         }
     }
 
+    _buildIdleHTML() {
+        if (!config.getSetting('guildIdleDisplay', true)) return '';
+
+        const memberList = guildXPTracker.getMemberList();
+        if (memberList.length === 0) return '';
+
+        const idleNames = memberList
+            .filter((m) => m.isOnline && m.inactiveTime !== null && !m.hideOnlineStatus)
+            .map((m) => m.name)
+            .sort((a, b) => a.localeCompare(b));
+
+        const namesStr =
+            idleNames.length === 0
+                ? '<span style="color: var(--color-success);">None</span>'
+                : idleNames.map((n) => `<span style="color: #f0a830;">${n}</span>`).join(', ');
+
+        return `
+            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
+                <div class="GuildPanel_dataBlock__3qVhK" style="padding: 8px 12px; height: auto; min-height: 0;">
+                    <div class="GuildPanel_label__-A63g">Idle members (${idleNames.length})</div>
+                    <div style="font-size: 13px; line-height: 1.6; max-height: 120px; overflow-y: auto;">${namesStr}</div>
+                </div>
+            </div>`;
+    }
+
     _refreshOverviewIfVisible() {
         const dataGridEl = document.querySelector('[class*="GuildPanel_dataGrid"]');
         if (dataGridEl) {
@@ -476,9 +375,44 @@ class GuildXPDisplay {
     // ─── Members tab ─────────────────────────────────────────────────────────
 
     _renderMembers(tableEl) {
-        // Skip if already rendered
+        // Skip if already injected
         if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
 
+        // Set up a tab-switch observer once per table element.
+        // React reuses the same DOM element across the Status/Contributions tabs,
+        // updating header text in place. We detect that by watching the thead for
+        // changes to game-owned headers, then re-inject our columns for the new view.
+        if (!tableEl._mwiTabObserver) {
+            const theadTrEl = tableEl.querySelector('thead tr');
+            if (theadTrEl) {
+                const getGameHeaders = () =>
+                    Array.from(theadTrEl.children)
+                        .filter((th) => !th.classList.contains(CSS_PREFIX))
+                        .map((th) => th.textContent.trim())
+                        .join('|');
+                let lastHeaders = getGameHeaders();
+
+                const obs = new MutationObserver(() => {
+                    const cur = getGameHeaders();
+                    if (cur === lastHeaders) return;
+                    lastHeaders = cur;
+                    tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+                    setTimeout(() => {
+                        this._injectMembersColumns(tableEl);
+                        this._highlightMembersRows(tableEl);
+                    }, 50);
+                });
+                obs.observe(theadTrEl, { childList: true, subtree: true, characterData: true });
+                tableEl._mwiTabObserver = obs;
+                this.unregisterObservers.push(() => obs.disconnect());
+            }
+        }
+
+        this._injectMembersColumns(tableEl);
+        this._highlightMembersRows(tableEl);
+    }
+
+    _injectMembersColumns(tableEl) {
         const guildID = guildXPTracker.getOwnGuildID();
         if (!guildID) return;
 
@@ -518,6 +452,9 @@ class GuildXPDisplay {
                 gameMode: meta?.gameMode || 'standard',
                 joinTime: meta?.joinTime || null,
                 xp: xp || 0,
+                inactiveTime: meta?.inactiveTime || null,
+                isOnline: meta?.isOnline || false,
+                hideOnlineStatus: meta?.hideOnlineStatus || false,
             });
         }
 
@@ -530,68 +467,148 @@ class GuildXPDisplay {
         const theadTr = tableEl.querySelector('thead tr');
         if (!theadTr) return;
 
-        // Activity column is at index 3
-        const activityIndex = 3;
-        const insertAfter = activityIndex > 0 ? activityIndex - 1 : theadTr.children.length - 1;
+        // Find Activity column index — its presence indicates the Status tab.
+        const activityIndex = Array.from(theadTr.children).findIndex((el) => el.textContent.trim() === 'Activity');
+        const isStatusTab = activityIndex >= 0;
+        const insertAfter = theadTr.children.length - 1;
 
         const gameModes = { standard: 'MC', ironcow: 'IC', legacy_ironcow: 'LC' };
+        const showGameMode = config.getSetting('guildMembersShowGameMode', false);
+        const showJoined = config.getSetting('guildMembersShowJoined', true);
+        const showLastXPH = config.getSetting('guildMembersShowLastXPH', true);
+        const showLastDayXPH = config.getSetting('guildMembersShowLastDayXPH', true);
+        const activityTab = config.getSettingValue('guildMembersActivityTab', 'contributions');
 
-        // Game Mode column
-        addColumn(tableEl, {
-            name: t('Game Mode'),
-            insertAfter,
-            data: allStats.map((s) => s.gameMode),
-            format: (v) => gameModes[v] || v || '',
-            makeSortable: true,
-            sortId: 'gameMode',
-            sortData: allStats.map((s) => s.gameMode || ''),
-        });
+        // Joined column — Status tab only
+        if (isStatusTab) {
+            // Snapshot the game's native Activity cell HTML for each member so we can
+            // replay it verbatim on the Contributions tab (sprites, "Xd ago" text, etc.)
+            const activityColIdx = activityIndex;
+            for (const row of rows) {
+                const name = row.children[0]?.textContent?.trim();
+                const cell = row.children[activityColIdx];
+                if (name && cell) {
+                    this._activityCellCache[name] = cell.innerHTML;
+                }
+            }
 
-        // Joined column
-        addColumn(tableEl, {
-            name: t('Joined'),
-            insertAfter: insertAfter + 1,
-            data: allStats.map((s) => s.joinTime),
-            format: (v) =>
-                v
-                    ? `<span style="white-space: nowrap;">${formatDateTime(new Date(v), { includeTime: false, includeYear: true })}</span>`
-                    : '',
-            makeSortable: true,
-            sortId: 'joinTime',
-            sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
-        });
+            let styleEl = document.getElementById('mwi-guild-activity-hide');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'mwi-guild-activity-hide';
+                document.head.appendChild(styleEl);
+            }
+            if (activityTab === 'contributions') {
+                styleEl.textContent = `
+                    [class*="GuildPanel_activity"] { display: none !important; }`;
+            } else {
+                styleEl.textContent = '';
+            }
 
-        // Last XP/h column
-        addColumn(tableEl, {
-            name: t('Last XP/h'),
-            insertAfter: insertAfter + 2,
-            data: allStats.map((s) => s.lastXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
-            },
-            makeSortable: true,
-            sortId: 'lastXPH',
-            sortData: allStats.map((s) => s.lastXPH),
-        });
+            if (showGameMode) {
+                addColumn(tableEl, CSS_PREFIX, {
+                    name: t('Game Mode'),
+                    insertAfter,
+                    data: allStats.map((s) => s.gameMode),
+                    format: (v) => gameModes[v] || v || '',
+                    makeSortable: true,
+                    sortId: 'gameMode',
+                    sortData: allStats.map((s) => s.gameMode || ''),
+                });
+            }
 
-        // Last day XP/h column
-        addColumn(tableEl, {
-            name: t('Last day XP/h'),
-            insertAfter: insertAfter + 3,
-            data: allStats.map((s) => s.lastDayXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
-            },
-            makeSortable: true,
-            sortId: 'lastDayXPH',
-            sortData: allStats.map((s) => s.lastDayXPH),
-        });
+            if (showJoined) {
+                addColumn(tableEl, CSS_PREFIX, {
+                    name: t('Joined'),
+                    insertAfter,
+                    data: allStats.map((s) => s.joinTime),
+                    format: (v) =>
+                        v
+                            ? `<span style="white-space: nowrap;">${formatDateTime(new Date(v), { includeTime: false, includeYear: true })}</span>`
+                            : '',
+                    makeSortable: true,
+                    sortId: 'joinTime',
+                    sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
+                });
+            }
+            return;
+        }
+
+        // Contributions tab columns
+        let colOffset = 0;
+
+        if (showLastXPH) {
+            addColumn(tableEl, CSS_PREFIX, {
+                name: t('Last XP/h'),
+                insertAfter: insertAfter + colOffset,
+                data: allStats.map((s) => s.lastXPH),
+                format: (v, i) => {
+                    if (!v || v <= 0) return '';
+                    return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
+                },
+                makeSortable: true,
+                sortId: 'lastXPH',
+                sortData: allStats.map((s) => s.lastXPH),
+            });
+            colOffset++;
+        }
+
+        // Last day XP/h column — Contributions tab
+        if (showLastDayXPH) {
+            addColumn(tableEl, CSS_PREFIX, {
+                name: t('Last day XP/h'),
+                insertAfter: insertAfter + colOffset,
+                data: allStats.map((s) => s.lastDayXPH),
+                format: (v, i) => {
+                    if (!v || v <= 0) return '';
+                    return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
+                },
+                makeSortable: true,
+                sortId: 'lastDayXPH',
+                sortData: allStats.map((s) => s.lastDayXPH),
+            });
+            colOffset++;
+        }
+
+        // Activity column — Contributions tab (uses cached HTML from game's Status tab render)
+        if (activityTab !== 'status') {
+            addColumn(tableEl, CSS_PREFIX, {
+                name: t('Activity'),
+                insertAfter: insertAfter + colOffset,
+                data: allStats.map((s) => ({
+                    cached: this._activityCellCache[s.name] ?? null,
+                    inactiveTime: s.inactiveTime,
+                    isOnline: s.isOnline,
+                    hide: s.hideOnlineStatus,
+                })),
+                format: (v) => {
+                    if (v.cached !== null) return v.cached;
+                    // Fallback: text-based when Status tab hasn't been visited this session
+                    if (v.hide) return '–';
+                    if (v.isOnline) return '<span style="color:#4ade80; font-size:14px;" title="Online">●</span>';
+                    if (!v.inactiveTime) return '–';
+                    const ms = Date.now() - new Date(v.inactiveTime).getTime();
+                    const days = Math.floor(ms / 86400000);
+                    const hours = Math.floor(ms / 3600000);
+                    const mins = Math.floor(ms / 60000);
+                    if (days > 0) return `${days}d ago`;
+                    if (hours > 0) return `${hours}h ago`;
+                    return mins > 0 ? `${mins}m ago` : 'just now';
+                },
+                makeSortable: true,
+                sortId: 'activityTime',
+                sortData: allStats.map((s) => {
+                    if (s.hideOnlineStatus) return Infinity;
+                    if (s.isOnline) return 0;
+                    if (!s.inactiveTime) return Infinity;
+                    return Date.now() - new Date(s.inactiveTime).getTime();
+                }),
+            });
+        }
 
         // Make existing columns sortable
         const nameHeader = theadTr.children[0];
-        if (nameHeader && !nameHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        if (nameHeader && !nameHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(nameHeader, {
                 sortId: 'name',
                 valueGetter: (trEl) => trEl.children[0]?.textContent?.trim() || '',
@@ -599,8 +616,8 @@ class GuildXPDisplay {
         }
 
         // Guild Exp column
-        const expHeader = theadTr.children[4];
-        if (expHeader && !expHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        const expHeader = Array.from(theadTr.children).find((el) => el.textContent.includes('Guild Exp'));
+        if (expHeader && !expHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(expHeader, {
                 sortId: 'xp',
                 valueGetter: (trEl) => {
@@ -613,8 +630,8 @@ class GuildXPDisplay {
 
         // Role column
         const rolePriority = { Leader: 1, General: 2, Officer: 3, Member: 4 };
-        const roleHeader = theadTr.children[5];
-        if (roleHeader && !roleHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        const roleHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Role');
+        if (roleHeader && !roleHeader.querySelector('.mwi-col-sort-icon')) {
             const roleColIndex = Array.from(theadTr.children).indexOf(roleHeader);
             makeColumnSortable(roleHeader, {
                 sortId: 'role',
@@ -626,8 +643,8 @@ class GuildXPDisplay {
         }
 
         // Activity column
-        const activityHeader = theadTr.children[3];
-        if (activityHeader && !activityHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        const activityHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
+        if (activityHeader && !activityHeader.querySelector('.mwi-col-sort-icon')) {
             const activityColIndex = Array.from(theadTr.children).indexOf(activityHeader);
             makeColumnSortable(activityHeader, {
                 sortId: 'activity',
@@ -651,8 +668,8 @@ class GuildXPDisplay {
         }
 
         // Status column
-        const statusHeader = theadTr.children[1];
-        if (statusHeader && !statusHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        const statusHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Status');
+        if (statusHeader && !statusHeader.querySelector('.mwi-col-sort-icon')) {
             const statusColIndex = Array.from(theadTr.children).indexOf(statusHeader);
             makeColumnSortable(statusHeader, {
                 sortId: 'status',
@@ -662,6 +679,16 @@ class GuildXPDisplay {
                 },
             });
         }
+
+        // Weekly XP numeric sort is handled by a document-level capturing interceptor
+        // in initialize() — see _weeklyXPClickHandler.
+    }
+
+    _highlightMembersRows(tableEl) {
+        const tbodyEl = tableEl.querySelector('tbody');
+        if (!tbodyEl) return;
+        const rows = Array.from(tbodyEl.children);
+        const theadTr = tableEl.querySelector('thead tr');
 
         // Highlight self-player row
         const selfName = dataManager.getCurrentCharacterName();
@@ -674,11 +701,13 @@ class GuildXPDisplay {
             }
         }
 
-        // Highlight inactive players (orange for days inactive, red for 10d+)
+        // Highlight inactive players using whichever Activity column is present
+        // (game's on Status tab, or our injected one on Contributions tab)
+        const activityHeader =
+            theadTr && Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
         if (activityHeader) {
             const actColIndex = Array.from(theadTr.children).indexOf(activityHeader);
             for (const row of rows) {
-                // Skip self-player row
                 if (selfName && row.children[0]?.textContent?.trim() === selfName) continue;
                 const cell = row.children[actColIndex];
                 if (!cell) continue;
@@ -686,11 +715,7 @@ class GuildXPDisplay {
                 const daysMatch = text.match(/(\d+)d\s*ago/);
                 if (daysMatch) {
                     const days = parseInt(daysMatch[1], 10);
-                    if (days >= 10) {
-                        row.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
-                    } else {
-                        row.style.backgroundColor = 'rgba(251, 146, 60, 0.12)';
-                    }
+                    row.style.backgroundColor = days >= 10 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(251, 146, 60, 0.12)';
                 }
             }
         }
@@ -701,24 +726,117 @@ class GuildXPDisplay {
         // No explicit refresh needed.
     }
 
-    // ─── Leaderboard tab ─────────────────────────────────────────────────────
+    // ─── Trials tab ──────────────────────────────────────────────────────────
 
-    _renderLeaderboard(tableEl) {
-        // Skip if already rendered
-        if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
+    _renderTrialSignups(trialsContentEl) {
+        if (!config.getSetting('guildTrialSignupDisplay', true)) return;
 
-        const isGuildLeaderboard = !!tableEl.closest('[class*="GuildPanel"]');
+        // Remove previous injection
+        trialsContentEl.querySelectorAll('.mwi-trial-signups').forEach((el) => el.remove());
 
-        if (isGuildLeaderboard) {
-            const allHistories = guildXPTracker.getAllGuildHistories();
-            if (!allHistories || Object.keys(allHistories).length === 0) return;
+        const memberList = guildXPTracker.getMemberList();
+        if (!memberList.length) return;
+
+        const currentWeek = guildXPTracker.getCurrentWeekStartAt();
+        const unsignedSkilling = [];
+        const unsignedCombat = [];
+
+        for (const member of memberList) {
+            const meta = guildXPTracker.getMemberMeta(member.characterID);
+            if (!meta) continue;
+
+            // Members who joined after this week's reset are ineligible until next week
+            if (currentWeek && meta.joinTime && new Date(meta.joinTime) >= new Date(currentWeek)) continue;
+
+            const signedUpThisWeek = currentWeek && meta.signupWeekStartAt === currentWeek;
+
+            if (!signedUpThisWeek || !meta.signedUpSkillingTrialHrid) {
+                unsignedSkilling.push(meta.name);
+            }
+            if (!signedUpThisWeek || !meta.signedUpCombatTrialHrid) {
+                unsignedCombat.push(meta.name);
+            }
         }
 
-        // Widen container
+        unsignedSkilling.sort((a, b) => a.localeCompare(b));
+        unsignedCombat.sort((a, b) => a.localeCompare(b));
+
+        const statusRow = trialsContentEl.querySelector('[class*="GuildPanel_eventStatusRow"]');
+        if (!statusRow) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mwi-trial-signups';
+        wrapper.style.cssText = `
+            margin: 8px 0 4px;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.25);
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.6;
+        `;
+
+        const makeList = (label, names) => {
+            const color = names.length === 0 ? '#4ade80' : '#f0a830';
+            const nameStr =
+                names.length === 0
+                    ? 'All signed up ✓'
+                    : names
+                          .map(
+                              (n) =>
+                                  `<span class="mwi-trial-name" data-name="${n}" style="cursor:pointer; text-decoration:underline dotted; color:${color};">${n}</span>`
+                          )
+                          .join('<span style="color:#6b7280;">, </span>');
+            return `<div><span style="color:#9ca3af;">${label} (${names.length} unsigned):</span> <span style="color:${color};">${nameStr}</span></div>`;
+        };
+
+        wrapper.innerHTML = makeList('Skilling', unsignedSkilling) + makeList('Combat', unsignedCombat);
+
+        statusRow.insertAdjacentElement('afterend', wrapper);
+
+        wrapper.querySelectorAll('.mwi-trial-name').forEach((el) => {
+            el.addEventListener('click', () => {
+                const name = el.dataset.name;
+                const chatInput = document.querySelector('[class*="Chat_chatInputContainer"] input');
+                if (!chatInput) return;
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                const DEFAULT_TEMPLATE = "/w {name} Why haven't you signed up for your trial(s) yet?!";
+                let template =
+                    config.getSettingValue('guildTrialWhisperTemplate', DEFAULT_TEMPLATE) || DEFAULT_TEMPLATE;
+                if (Array.isArray(template)) {
+                    template = template
+                        .map((item) => (item.type === 'variable' ? item.key : (item.value ?? '')))
+                        .join('');
+                }
+                setter.call(chatInput, String(template).replace('{name}', name));
+                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                chatInput.focus();
+            });
+        });
+    }
+
+    /**
+     * Parse a Weekly XP cell value, handling K (thousands) and M (millions) suffixes.
+     * @param {string} raw
+     * @returns {number}
+     */
+    _parseWeeklyXP(raw) {
+        const m = raw.match(/^([\d,.]+)(K|M)?$/i);
+        if (!m) return 0;
+        const num = parseFloat(m[1].replace(/,/g, ''));
+        const mult = m[2]?.toUpperCase() === 'M' ? 1_000_000 : m[2]?.toUpperCase() === 'K' ? 1_000 : 1;
+        return num * mult;
+    }
+
+    // ─── Guild Leaderboard tab ───────────────────────────────────────────────
+
+    _renderGuildLeaderboard(tableEl) {
+        if (tableEl.querySelector(`th.${CSS_PREFIX}`)) return;
+
+        const allHistories = guildXPTracker.getAllGuildHistories();
+        if (!allHistories || Object.keys(allHistories).length === 0) return;
+
         const containerEl = tableEl.closest('[class*="LeaderboardPanel_content"]');
-        if (containerEl) {
-            containerEl.style.maxWidth = '1000px';
-        }
+        if (containerEl) containerEl.style.maxWidth = '1000px';
 
         const tbodyEl = tableEl.querySelector('tbody');
         if (!tbodyEl) return;
@@ -727,24 +845,13 @@ class GuildXPDisplay {
         const theadTr = tableEl.querySelector('thead tr');
         if (!theadTr) return;
 
-        // Calculate stats for each row
         const allStats = [];
         for (const row of rows) {
-            // Leaderboard: col[0]=Rank, col[1]=Name
             const name = row.children[1]?.textContent?.trim();
-            const stats = name
-                ? isGuildLeaderboard
-                    ? guildXPTracker.getGuildStats(name)
-                    : guildXPTracker.getPlayerStats(name)
-                : { lastXPH: 0, lastDayXPH: 0 };
-            allStats.push({
-                name,
-                lastXPH: stats.lastXPH,
-                lastDayXPH: stats.lastDayXPH,
-            });
+            const stats = name ? guildXPTracker.getGuildStats(name) : { lastXPH: 0, lastDayXPH: 0 };
+            allStats.push({ name, lastXPH: stats.lastXPH, lastDayXPH: stats.lastDayXPH });
         }
 
-        // Compute rankings
         const byLastXPH = allStats.slice().sort((a, b) => b.lastXPH - a.lastXPH);
         const byLastDayXPH = allStats.slice().sort((a, b) => b.lastDayXPH - a.lastDayXPH);
         for (let i = 0; i < byLastXPH.length; i++) byLastXPH[i].lastXPH_rank = i + 1;
@@ -753,14 +860,11 @@ class GuildXPDisplay {
         const insertAfter = theadTr.children.length - 1;
 
         // Last XP/h
-        addColumn(tableEl, {
+        addColumn(tableEl, CSS_PREFIX, {
             name: t('Last XP/h'),
             insertAfter,
             data: allStats.map((s) => s.lastXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
-            },
+            format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`),
             makeSortable: true,
             sortId: 'lastXPH',
             skipFirst: true,
@@ -768,23 +872,19 @@ class GuildXPDisplay {
         });
 
         // Last day XP/h
-        addColumn(tableEl, {
+        addColumn(tableEl, CSS_PREFIX, {
             name: t('Last day XP/h'),
             insertAfter: insertAfter + 1,
             data: allStats.map((s) => s.lastDayXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
-            },
+            format: (v, i) => (!v || v <= 0 ? '' : `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`),
             makeSortable: true,
             sortId: 'lastDayXPH',
             skipFirst: true,
             sortData: allStats.map((s) => s.lastDayXPH),
         });
 
-        // Make Rank column sortable
-        const rankHeader = theadTr.children[0];
-        if (rankHeader && !rankHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+        const rankHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Rank');
+        if (rankHeader && !rankHeader.querySelector('.mwi-col-sort-icon')) {
             makeColumnSortable(rankHeader, {
                 sortId: 'rank',
                 skipFirst: true,
@@ -796,12 +896,11 @@ class GuildXPDisplay {
         }
     }
 
-    _refreshLeaderboardIfVisible() {
-        const tableEl = document.querySelector('[class*="LeaderboardPanel_leaderboardTable"]');
+    _refreshGuildLeaderboardIfVisible() {
+        const tableEl = document.querySelector('[class*="GuildPanel"] [class*="LeaderboardPanel_leaderboardTable"]');
         if (tableEl) {
-            // Remove existing columns and re-render
-            tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
-            this._renderLeaderboard(tableEl);
+            tableEl.querySelectorAll(`th.${CSS_PREFIX}, td.${CSS_PREFIX}`).forEach((el) => el.remove());
+            this._renderGuildLeaderboard(tableEl);
         }
     }
 
@@ -853,6 +952,7 @@ class GuildXPDisplay {
         // Remove all injected elements
         document.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+        document.getElementById('mwi-guild-activity-hide')?.remove();
 
         this.initialized = false;
     }

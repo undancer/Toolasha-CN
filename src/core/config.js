@@ -145,6 +145,13 @@ class Config {
                 description: t('View and export all market listing history'),
                 settingKey: 'market_showHistoryViewer',
             },
+            market_listingRefreshNavigator: {
+                enabled: true,
+                name: 'Listing Refresh Navigator',
+                category: 'Market',
+                description: 'Cycles through My Listings navigating to each order book one at a time',
+                settingKey: 'market_listingRefreshNavigator',
+            },
             market_showPhiloCalculator: {
                 enabled: true,
                 name: t('Philo Gamba Calculator'),
@@ -187,6 +194,14 @@ class Config {
                 category: 'Actions',
                 description: t('Shows total required and missing materials for production actions'),
                 settingKey: 'requiredMaterials',
+            },
+
+            drinkTimer: {
+                enabled: true,
+                name: 'Drink Timer',
+                category: 'Actions',
+                description: 'Shows remaining drink supply time and queue coverage in skill panels',
+                settingKey: 'drinkTimer',
             },
 
             // Combat Features
@@ -339,6 +354,13 @@ class Config {
                 description: t('Shows remaining XP to next level on skill bars'),
                 settingKey: 'skillRemainingXP',
             },
+            skillingOptimizer: {
+                enabled: true,
+                name: 'Skilling Simulator/Optimizer',
+                category: 'Skills',
+                description: 'Optimizer tab in the character panel',
+                settingKey: 'skillingOptimizer',
+            },
 
             // House Features
             houseCostDisplay: {
@@ -432,7 +454,7 @@ class Config {
             return;
         }
 
-        settingsStorage.setCharacterId(characterId);
+        settingsStorage.setCharacterId(characterId, dataManager.getCurrentCharacterName());
 
         const previousMap = this.settingsMap;
 
@@ -643,35 +665,31 @@ class Config {
      * Sync current settings to all other characters
      * @returns {Promise<{success: boolean, count: number, error?: string}>} Result object
      */
-    async syncSettingsToAllCharacters() {
+    async syncSettingsToAllCharacters(targetIds) {
         try {
-            // Ensure character ID is set
             const characterId = dataManager.getCurrentCharacterId();
             if (!characterId) {
-                return {
-                    success: false,
-                    count: 0,
-                    error: 'No character ID available',
-                };
+                return { success: false, count: 0, error: 'No character ID available' };
             }
-
-            // Set character ID in settings storage
-            settingsStorage.setCharacterId(characterId);
-
-            // Sync settings to all other characters
-            const syncedCount = await settingsStorage.syncSettingsToAllCharacters(this.settingsMap);
-
-            return {
-                success: true,
-                count: syncedCount,
-            };
+            settingsStorage.setCharacterId(characterId, dataManager.getCurrentCharacterName());
+            const syncedCount = await settingsStorage.syncSettingsToAllCharacters(this.settingsMap, targetIds);
+            return { success: true, count: syncedCount };
         } catch (error) {
             console.error('[Config] Failed to sync settings:', error);
-            return {
-                success: false,
-                count: 0,
-                error: error.message,
-            };
+            return { success: false, count: 0, error: error.message };
+        }
+    }
+
+    /**
+     * Get list of known characters as [{id, name}] objects.
+     * @returns {Promise<Array<{id: string, name: string}>>}
+     */
+    async getKnownCharacters() {
+        try {
+            return await settingsStorage.getKnownCharacters();
+        } catch (error) {
+            console.error('[Config] Failed to get known characters:', error);
+            return [];
         }
     }
 

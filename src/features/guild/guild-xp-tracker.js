@@ -7,7 +7,7 @@
  * - character_initialized (via dataManager) — initial snapshot on login
  * - guild_updated — guild total XP changes
  * - guild_characters_updated — per-member XP changes
- * - leaderboard_updated (category: guild) — XP for all guilds on leaderboard
+ * - leaderboard_updated (category: guild) — XP for all guilds on the guild leaderboard
  */
 
 import dataManager from '../../core/data-manager.js';
@@ -218,10 +218,11 @@ class GuildXPTracker {
         this.ownGuildName = null;
         this.ownGuildID = null;
         this.guildCreatedAt = null;
+        this.guildType = null;
+        this.currentWeekStartAt = null;
         this.guildXPHistory = {}; // guildName → [{t, xp}]
         this.memberXPHistory = {}; // characterID → [{t, xp}]
-        this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy}
-        this.playerXPHistory = {}; // playerName → [{t, xp}] (main leaderboard)
+        this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy, ...}
         this.unregisterHandlers = [];
     }
 
@@ -243,19 +244,19 @@ class GuildXPTracker {
         webSocketHook.on('guild_updated', this._boundOnGuildUpdated);
         webSocketHook.on('guild_characters_updated', this._boundOnMembersUpdated);
         webSocketHook.on('leaderboard_updated', this._boundOnLeaderboardUpdated);
+        this._boundOnTrialSignupUpdated = (data) => this._onTrialSignupUpdated(data);
+        webSocketHook.on('guild_trial_signup_updated', this._boundOnTrialSignupUpdated);
         this.unregisterHandlers.push(() => {
             webSocketHook.off('guild_updated', this._boundOnGuildUpdated);
             webSocketHook.off('guild_characters_updated', this._boundOnMembersUpdated);
             webSocketHook.off('leaderboard_updated', this._boundOnLeaderboardUpdated);
+            webSocketHook.off('guild_trial_signup_updated', this._boundOnTrialSignupUpdated);
         });
 
         // If character data already loaded, initialize immediately
         if (dataManager.characterData) {
             await this._onCharacterInit(dataManager.characterData);
         }
-
-        // Load persisted player leaderboard history
-        this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME, {});
 
         this.initialized = true;
     }
@@ -272,6 +273,8 @@ class GuildXPTracker {
         const guildXP = guild.experience;
         this.ownGuildName = guildName;
         this.guildCreatedAt = guild.createdAt;
+        this.guildType = guild.guildType || null;
+        this.currentWeekStartAt = guild.currentWeekStartAt || null;
 
         // Extract guild ID and member metadata
         const guildCharacterMap = data.guildCharacterMap || {};
@@ -292,6 +295,12 @@ class GuildXPTracker {
                 gameMode: sharableData.gameMode,
                 joinTime: guildChar?.joinTime || null,
                 invitedBy: sharableMap[inviterId]?.name || null,
+                inactiveTime: sharableData.inactiveTime || null,
+                isOnline: sharableData.isOnline || false,
+                hideOnlineStatus: sharableData.hideOnlineStatus || false,
+                signedUpSkillingTrialHrid: guildChar?.signedUpSkillingTrialHrid || '',
+                signedUpCombatTrialHrid: guildChar?.signedUpCombatTrialHrid || '',
+                signupWeekStartAt: guildChar?.signupWeekStartAt || null,
             };
         }
 
@@ -318,9 +327,9 @@ class GuildXPTracker {
         }
 
         // Persist
-        await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME);
+        await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME, true);
         if (this.ownGuildID) {
-            await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME);
+            await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME, true);
         }
     }
 
@@ -335,6 +344,8 @@ class GuildXPTracker {
         const name = guild.name;
         this.ownGuildName = name;
         this.guildCreatedAt = guild.createdAt;
+        this.guildType = guild.guildType || this.guildType;
+        this.currentWeekStartAt = guild.currentWeekStartAt || this.currentWeekStartAt;
 
         if (!this.guildXPHistory[name]) {
             this.guildXPHistory[name] = [];
@@ -376,6 +387,12 @@ class GuildXPTracker {
                 gameMode: sharableData.gameMode,
                 joinTime: guildChar?.joinTime || null,
                 invitedBy: sharableMap[inviterId]?.name || null,
+                inactiveTime: sharableData.inactiveTime || null,
+                isOnline: sharableData.isOnline || false,
+                hideOnlineStatus: sharableData.hideOnlineStatus || false,
+                signedUpSkillingTrialHrid: guildChar?.signedUpSkillingTrialHrid || '',
+                signedUpCombatTrialHrid: guildChar?.signedUpCombatTrialHrid || '',
+                signupWeekStartAt: guildChar?.signupWeekStartAt || null,
             };
         }
 
@@ -394,45 +411,43 @@ class GuildXPTracker {
     }
 
     /**
-     * Handle leaderboard_updated — record XP for all guilds on leaderboard,
-     * or player XP for the main leaderboard.
+     * Handle guild_trial_signup_updated — update a single member's trial signup state.
+     * @param {Object} data - guild_trial_signup_updated message
+     */
+    _onTrialSignupUpdated(data) {
+        const charId = String(data.characterId);
+        const meta = this.memberMeta[charId];
+        if (!meta) return;
+        meta.signedUpSkillingTrialHrid = data.signedUpSkillingTrialHrid || '';
+        meta.signedUpCombatTrialHrid = data.signedUpCombatTrialHrid || '';
+        meta.signupWeekStartAt = data.signupWeekStartAt || null;
+    }
+
+    /**
+     * Handle leaderboard_updated (category: guild) — record XP for all guilds on the guild leaderboard.
      * @param {Object} data - leaderboard_updated message
      */
     _onLeaderboardUpdated(data) {
+        if (data.leaderboardCategory !== 'guild') return;
+
         const rows = data.leaderboard?.rows;
         if (!rows || rows.length === 0) return;
 
         const t = Date.now();
 
-        if (data.leaderboardCategory === 'guild') {
-            for (const row of rows) {
-                const name = row.name;
-                const xp = row.value2;
-                if (!name || xp === undefined) continue;
+        for (const row of rows) {
+            const name = row.name;
+            const xp = row.value2;
+            if (!name || xp === undefined) continue;
 
-                if (!this.guildXPHistory[name]) {
-                    this.guildXPHistory[name] = [];
-                }
-                pushXP(this.guildXPHistory[name], { t, xp });
+            if (!this.guildXPHistory[name]) {
+                this.guildXPHistory[name] = [];
             }
+            pushXP(this.guildXPHistory[name], { t, xp });
+        }
 
-            // Persist using own guild name as key (all guild histories stored together)
-            if (this.ownGuildName) {
-                storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME);
-            }
-        } else {
-            for (const row of rows) {
-                const name = row.name;
-                const xp = row.value2;
-                if (!name || xp === undefined) continue;
-
-                if (!this.playerXPHistory[name]) {
-                    this.playerXPHistory[name] = [];
-                }
-                pushXP(this.playerXPHistory[name], { t, xp });
-            }
-
-            storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME);
+        if (this.ownGuildName) {
+            storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME);
         }
     }
 
@@ -490,6 +505,22 @@ class GuildXPTracker {
     }
 
     /**
+     * Get the current guild trial week start timestamp.
+     * @returns {string|null}
+     */
+    getCurrentWeekStartAt() {
+        return this.currentWeekStartAt;
+    }
+
+    /**
+     * Get the guild type ('standard', 'ironcow', etc.)
+     * @returns {string|null}
+     */
+    getGuildType() {
+        return this.guildType;
+    }
+
+    /**
      * Get member list with IDs.
      * @returns {Array<{characterID: string, name: string, gameMode: string, joinTime: string, invitedBy: string}>}
      */
@@ -501,16 +532,7 @@ class GuildXPTracker {
     }
 
     /**
-     * Get XP/hr stats for a player on the main leaderboard.
-     * @param {string} playerName
-     * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
-     */
-    getPlayerStats(playerName) {
-        return calcStats(this.playerXPHistory[playerName]);
-    }
-
-    /**
-     * Get all guild XP histories (for leaderboard stats).
+     * Get all guild XP histories (for guild leaderboard display).
      * @returns {Object} guildName → [{t, xp}]
      */
     getAllGuildHistories() {
@@ -578,7 +600,6 @@ class GuildXPTracker {
         this.guildXPHistory = {};
         this.memberXPHistory = {};
         this.memberMeta = {};
-        this.playerXPHistory = {};
         this.initialized = false;
     }
 }

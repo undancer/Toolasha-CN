@@ -130,6 +130,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'listingRefreshNavigator',
+            name: 'Listing Refresh Navigator',
+            category: 'Market',
+            module: Market.listingRefreshNavigator,
+            async: false,
+        },
+        {
             key: 'philoCalculator',
             name: 'Philo Calculator',
             category: 'Market',
@@ -149,6 +156,13 @@ function registerFeatures() {
             name: 'MilkyWay Market Link',
             category: 'Market',
             module: Market.milkywayMarketLink,
+            async: false,
+        },
+        {
+            key: 'sellQueue',
+            name: 'Sell Queue',
+            category: 'Market',
+            module: Market.sellQueue,
             async: false,
         },
         { key: 'networth', name: 'Net Worth', category: 'Economy', module: Market.networthFeature, async: false },
@@ -242,6 +256,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'drinkTimer',
+            name: 'Drink Timer',
+            category: 'Actions',
+            module: Actions.drinkTimer,
+            async: false,
+        },
+        {
             key: 'missingMaterialsButton',
             name: 'Missing Materials Button',
             category: 'Actions',
@@ -310,6 +331,13 @@ function registerFeatures() {
             name: 'Pinned Actions Page',
             category: 'Actions',
             module: Actions.pinnedActionsPage,
+            async: false,
+        },
+        {
+            key: 'skillingOptimizer',
+            name: 'Skilling Optimizer',
+            category: 'Actions',
+            module: Actions.skillingOptimizer,
             async: false,
         },
     ];
@@ -411,13 +439,6 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'loadoutSort',
-            name: 'Loadout Sort',
-            category: 'Combat',
-            module: Combat.loadoutSort,
-            async: false,
-        },
-        {
             key: 'loadoutSnapshot',
             name: 'Loadout Snapshots',
             category: 'Combat',
@@ -439,7 +460,7 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'combatSim',
+            key: 'labSim',
             name: 'Lab Simulator',
             category: 'Combat',
             module: Combat.labSim,
@@ -479,11 +500,25 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'hideGuildBadge',
+            name: 'Hide Guild Badge',
+            category: 'UI',
+            module: UI.hideGuildBadge,
+            async: false,
+        },
+        {
             key: 'tabReorder',
             name: 'Tab Reorder',
             category: 'UI',
             module: UI.tabReorder,
             async: true,
+        },
+        {
+            key: 'draggableModals',
+            name: 'Draggable Modals',
+            category: 'UI',
+            module: UI.draggableModals,
+            async: false,
         },
         {
             key: 'altClickNavigation',
@@ -670,6 +705,27 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'guildCreditValue',
+            name: 'Guild Credit Value',
+            category: 'Guild',
+            module: UI.guildCreditValue,
+            async: false,
+        },
+        {
+            key: 'leaderboardXPTracker',
+            name: 'Leaderboard XP Tracker',
+            category: 'Leaderboard',
+            module: UI.leaderboardXPTracker,
+            async: false,
+        },
+        {
+            key: 'leaderboardXPDisplay',
+            name: 'Leaderboard XP Display',
+            category: 'Leaderboard',
+            module: UI.leaderboardXPDisplay,
+            async: false,
+        },
+        {
             key: 'emptyQueueNotification',
             name: 'Empty Queue Notification',
             category: 'Notifications',
@@ -693,6 +749,7 @@ function registerFeatures() {
         key: feature.key,
         name: feature.name,
         category: feature.category,
+        module: feature.module,
         initialize: () => feature.module.initialize(),
         disable: typeof feature.module.disable === 'function' ? () => feature.module.disable() : undefined,
         async: feature.async,
@@ -766,12 +823,23 @@ if (!LIBRARIES_LOADED) {
     // Setup character switch handler once (NOT inside character_initialized listener)
     featureRegistry.setupCharacterSwitchHandler();
 
+    // Guard: only run full global startup once per page lifetime.
+    // Same-character resyncs (reconnect/resync delivering init_character_data again for the
+    // already-active character) must not create a second set of feature instances.
+    let globalInitDone = false;
+
     dataManager.on('character_initialized', (_data) => {
         // Skip full initialization during character switches
         // The character_switched handler in feature-registry already handles reinitialization
         if (_data._isCharacterSwitch) {
             return;
         }
+
+        // Skip same-character resyncs — features are already running.
+        if (globalInitDone) {
+            return;
+        }
+        globalInitDone = true;
 
         // Initialize all features using the feature registry
         setTimeout(async () => {
@@ -834,7 +902,7 @@ if (!LIBRARIES_LOADED) {
     // Expose minimal user-facing API
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-    targetWindow.Toolasha.version = '2.71.1';
+    targetWindow.Toolasha.version = '2.85.1';
 
     // Feature toggle API (for users to manage settings via console)
     if (config) {

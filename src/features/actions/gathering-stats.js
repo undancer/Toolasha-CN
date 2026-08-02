@@ -24,6 +24,8 @@ class GatheringStats {
         this.consumablesUpdatedHandler = null; // Handler for tea/drink changes
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.pricingModeHandler = null; // Handler for pricing mode changes
+        this.showProfitPerHourHandler = null;
+        this.showExpPerHourHandler = null;
         this.isInitialized = false;
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
         this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
@@ -40,7 +42,10 @@ class GatheringStats {
             return;
         }
 
-        if (!config.getSetting('actionPanel_showProfitPerHour') && !config.getSetting('actionPanel_showExpPerHour')) {
+        if (
+            !config.getSetting('actionPanel_showProfitPerHour_gathering') &&
+            !config.getSetting('actionPanel_showExpPerHour_gathering')
+        ) {
             return;
         }
 
@@ -78,8 +83,10 @@ class GatheringStats {
             this.updateAllStats();
         };
         config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
-        config.onSettingChange('actionPanel_showProfitPerHour', () => this.updateAllStats());
-        config.onSettingChange('actionPanel_showExpPerHour', () => this.updateAllStats());
+        this.showProfitPerHourHandler = () => this.updateAllStats();
+        this.showExpPerHourHandler = () => this.updateAllStats();
+        config.onSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
+        config.onSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
     }
 
     /**
@@ -468,8 +475,8 @@ class GatheringStats {
      */
     renderIndicators(actionPanel, data) {
         const { profitPerHour, expPerHour } = data;
-        const showProfit = config.getSetting('actionPanel_showProfitPerHour');
-        const showExp = config.getSetting('actionPanel_showExpPerHour');
+        const showProfit = config.getSetting('actionPanel_showProfitPerHour_gathering');
+        const showExp = config.getSetting('actionPanel_showExpPerHour_gathering');
         let html = '';
 
         if (showProfit && profitPerHour !== null) {
@@ -679,6 +686,16 @@ class GatheringStats {
         if (this.pricingModeHandler) {
             config.offSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             this.pricingModeHandler = null;
+        }
+
+        if (this.showProfitPerHourHandler) {
+            config.offSettingChange('actionPanel_showProfitPerHour_gathering', this.showProfitPerHourHandler);
+            this.showProfitPerHourHandler = null;
+        }
+
+        if (this.showExpPerHourHandler) {
+            config.offSettingChange('actionPanel_showExpPerHour_gathering', this.showExpPerHourHandler);
+            this.showExpPerHourHandler = null;
         }
 
         // Clear all DOM references

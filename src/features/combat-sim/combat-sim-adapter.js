@@ -87,6 +87,7 @@ export function buildPlayerDTO() {
         houseRooms: {},
         tokenUpgrades: { speed: 0, efficiency: 0, success: 0, doubleProgress: 0 },
         communityBuffLevels: { productionEfficiency: 0, enhancingSpeed: 0, gatheringQuantity: 0, experience: 0 },
+        guildCombatBuffs: [],
     };
 
     // Extract all skill levels (combat + skilling)
@@ -116,6 +117,9 @@ export function buildPlayerDTO() {
         gatheringQuantity: dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity') || 0,
         experience: dataManager.getCommunityBuffLevel('/community_buff_types/experience') || 0,
     };
+
+    // Extract guild combat buffs (pre-computed server-side per action type)
+    dto.guildCombatBuffs = characterData.guildActionTypeBuffsMap?.['/action_types/combat'] || [];
 
     // Extract equipped items → keyed by equipment type
     // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)
@@ -1150,9 +1154,10 @@ export function getZonesThatDropItem(itemHrid, gameData) {
         } else {
             // Regular zone: check each monster's drop table and rare drop table
             const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+            const bossSpawns = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
             const validTiers = new Set();
 
-            for (const spawn of spawns) {
+            for (const spawn of [...spawns, ...bossSpawns]) {
                 const monster = combatMonsterDetailMap[spawn.combatMonsterHrid];
                 if (!monster) continue;
 

@@ -45,11 +45,6 @@ class ChatCommands {
         if (existing) {
             this.attachToInput(existing);
         }
-
-        // Listen for character switch to cleanup
-        dataManager.on('character_switching', () => {
-            this.cleanup();
-        });
     }
 
     /**

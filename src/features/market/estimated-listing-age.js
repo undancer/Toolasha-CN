@@ -691,8 +691,7 @@ class EstimatedListingAge {
                     const quantityText = row.children[0]?.textContent || '';
                     const price = this.parsePrice(priceText);
                     const quantity = this.parseQuantity(quantityText);
-
-                    // Get currently active listings to validate matches
+                    if (price === null) return;
                     const activeListings = dataManager.getMarketListings();
                     const activeListingIds = new Set(activeListings.map((l) => l.id));
 
@@ -774,6 +773,7 @@ class EstimatedListingAge {
 
                     const price = this.parsePrice(priceText);
                     const quantity = this.parseQuantity(quantityText);
+                    if (price === null) continue;
 
                     // Find matching listing from YOUR listings
                     const matchedListing = this.knownListings.find((listing) => {
@@ -811,24 +811,6 @@ class EstimatedListingAge {
 
         // Default to enhancement level 0 (non-equipment or base equipment)
         return 0;
-    }
-
-    /**
-     * Parse price from text (handles K/M suffixes)
-     * @param {string} text - Price text
-     * @returns {number} Price value
-     */
-    parsePrice(text) {
-        let multiplier = 1;
-        if (text.toUpperCase().includes('K')) {
-            multiplier = 1000;
-            text = text.replace(/K/gi, '');
-        } else if (text.toUpperCase().includes('M')) {
-            multiplier = 1000000;
-            text = text.replace(/M/gi, '');
-        }
-        const numStr = text.replace(/[^0-9.]/g, '');
-        return numStr ? Number(numStr) * multiplier : 0;
     }
 
     /**

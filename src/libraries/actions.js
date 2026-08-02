@@ -21,10 +21,14 @@ import craftingPlan from '../features/crafting-plan/index.js';
 import teaRecommendation from '../features/actions/tea-recommendation.js';
 import inventoryCountDisplay from '../features/actions/inventory-count-display.js';
 import pinnedActionsPage from '../features/actions/pinned-actions-page.js';
+import drinkTimer from '../features/actions/drink-timer.js';
 
 // Alchemy features
 import alchemyProfitDisplay from '../features/alchemy/alchemy-profit-display.js';
 import alchemyBestItems from '../features/alchemy/alchemy-best-items.js';
+
+// Skilling optimizer
+import skillingOptimizer from '../features/skilling-optimizer/skilling-optimizer-ui.js';
 
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
@@ -52,6 +56,8 @@ toolashaRoot.Actions = {
     teaRecommendation,
     inventoryCountDisplay,
     pinnedActionsPage,
+    drinkTimer,
+    skillingOptimizer,
 };
 
 console.log('[Toolasha] Actions library loaded');

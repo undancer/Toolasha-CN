@@ -41,11 +41,12 @@ export function getWorkerURL() {
 }
 
 /**
- * Build extra buffs from community buffs and MooPass.
+ * Build extra buffs from community buffs, MooPass, and guild combat buffs.
  * @param {Object} communityBuffs - { mooPass, comExp, comDrop }
+ * @param {Array} [guildCombatBuffs] - Pre-computed guild buff objects for /action_types/combat
  * @returns {Array<Object>}
  */
-export function buildExtraBuffs(communityBuffs) {
+export function buildExtraBuffs(communityBuffs, guildCombatBuffs) {
     const extraBuffs = [];
 
     if (communityBuffs?.mooPass) {
@@ -85,6 +86,10 @@ export function buildExtraBuffs(communityBuffs) {
             startTime: '0001-01-01T00:00:00Z',
             duration: 0,
         });
+    }
+
+    if (Array.isArray(guildCombatBuffs)) {
+        extraBuffs.push(...guildCombatBuffs);
     }
 
     return extraBuffs;
@@ -220,6 +225,47 @@ function mergeSimResults(results) {
             }
         }
 
+        // Mana run out (OR across chunks — if any chunk went OOM, mark as true)
+        if (r.playerRanOutOfMana) {
+            if (!merged.playerRanOutOfMana) merged.playerRanOutOfMana = {};
+            for (const [playerHrid, ranOut] of Object.entries(r.playerRanOutOfMana)) {
+                merged.playerRanOutOfMana[playerHrid] = merged.playerRanOutOfMana[playerHrid] || ranOut;
+            }
+        }
+
+        // Mana run out time (sum closed OOM windows; close any still-open window at chunk boundary)
+        if (r.playerRanOutOfManaTime) {
+            if (!merged.playerRanOutOfManaTime) merged.playerRanOutOfManaTime = {};
+            for (const [playerHrid, stat] of Object.entries(r.playerRanOutOfManaTime)) {
+                const openWindow = stat.isOutOfMana ? r.simulatedTime - stat.startTimeForOutOfMana : 0;
+                const chunkTotal = stat.totalTimeForOutOfMana + openWindow;
+                if (!merged.playerRanOutOfManaTime[playerHrid]) {
+                    merged.playerRanOutOfManaTime[playerHrid] = {
+                        isOutOfMana: false,
+                        startTimeForOutOfMana: 0,
+                        totalTimeForOutOfMana: 0,
+                    };
+                }
+                merged.playerRanOutOfManaTime[playerHrid].totalTimeForOutOfMana += chunkTotal;
+            }
+        }
+
+        // Debuff on level gap — constant per player, just take the value from any chunk
+        if (r.debuffOnLevelGap) {
+            if (!merged.debuffOnLevelGap) merged.debuffOnLevelGap = {};
+            for (const [playerHrid, debuff] of Object.entries(r.debuffOnLevelGap)) {
+                merged.debuffOnLevelGap[playerHrid] = debuff;
+            }
+        }
+
+        // Wipe events — collect up to 20 across all chunks
+        if (r.wipeEvents && r.wipeEvents.length > 0) {
+            if (!merged.wipeEvents) merged.wipeEvents = [];
+            for (const event of r.wipeEvents) {
+                if (merged.wipeEvents.length < 20) merged.wipeEvents.push(event);
+            }
+        }
+
         // Dungeon stats
         if (r.isDungeon) {
             merged.dungeonsCompleted = (merged.dungeonsCompleted || 0) + (r.dungeonsCompleted || 0);
@@ -229,6 +275,14 @@ function mergeSimResults(results) {
 
         // Simulated time
         merged.simulatedTime = (merged.simulatedTime || 0) + (r.simulatedTime || 0);
+
+        // Total damage dealt per source
+        if (r.totalDamageDealt) {
+            if (!merged.totalDamageDealt) merged.totalDamageDealt = {};
+            for (const [hrid, damage] of Object.entries(r.totalDamageDealt)) {
+                merged.totalDamageDealt[hrid] = (merged.totalDamageDealt[hrid] || 0) + damage;
+            }
+        }
 
         // Time spent alive
         if (r.timeSpentAlive) {
@@ -263,7 +317,8 @@ function mergeSimResults(results) {
 export async function runSimulation(params, onProgress) {
     const { gameData, playerDTOs, zoneHrid, difficultyTier, hours, communityBuffs } = params;
 
-    const extraBuffs = buildExtraBuffs(communityBuffs);
+    const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
+    const extraBuffs = buildExtraBuffs(communityBuffs, guildCombatBuffs);
     const ONE_HOUR_NS = 3600 * 1e9;
 
     // Cancel any previous run
@@ -367,7 +422,8 @@ export async function runLabyrinthSimulation(params, onProgress) {
         labyrinthCombatBuffs,
     } = params;
 
-    const extraBuffs = [...buildExtraBuffs(communityBuffs), ...(labyrinthCombatBuffs || [])];
+    const guildCombatBuffs = playerDTOs[0]?.guildCombatBuffs;
+    const extraBuffs = [...buildExtraBuffs(communityBuffs, guildCombatBuffs), ...(labyrinthCombatBuffs || [])];
     const ONE_HOUR_NS = 3600 * 1e9;
 
     // Cancel any previous run

@@ -69,6 +69,7 @@ class ActionTimeDisplay {
         this.activeBarProfitId = null;
         this.waitForPanelTimeout = null;
         this.retryUpdateTimeout = null;
+        this.settingChangeHandlers = []; // [{key, fn}] for offSettingChange cleanup
         this.cleanupRegistry = createCleanupRegistry();
     }
 
@@ -98,14 +99,20 @@ class ActionTimeDisplay {
             'profitCalc_pricingMode',
         ];
         for (const key of actionBarSettings) {
-            config.onSettingChange(key, (newValue) => {
+            const fn = (newValue) => {
                 if (key === 'actionBar_enabled' && !newValue) {
                     this.disable();
                     return;
                 }
                 this.updateDisplay();
-            });
+            };
+            config.onSettingChange(key, fn);
+            this.settingChangeHandlers.push({ key, fn });
         }
+        this.cleanupRegistry.registerCleanup(() => {
+            this.settingChangeHandlers.forEach(({ key, fn }) => config.offSettingChange(key, fn));
+            this.settingChangeHandlers = [];
+        });
 
         // Set up handler for character switching
         if (!this.characterInitHandler) {
@@ -1600,6 +1607,11 @@ class ActionTimeDisplay {
             }
 
             if (itemNameFromDom && currentAction.primaryItemHash) {
+                const { itemHrid: hashItemHrid } = this.parseItemHash(currentAction.primaryItemHash);
+                if (hashItemHrid) {
+                    const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                    if (hashItemDetails?.name === itemNameFromDom) return true;
+                }
                 return currentAction.primaryItemHash.includes(itemHridFromDom);
             }
 
@@ -2032,6 +2044,11 @@ class ActionTimeDisplay {
 
             // If there's an item name, match on primaryItemHash
             if (itemNameFromDiv && a.primaryItemHash) {
+                const { itemHrid: hashItemHrid } = this.parseItemHash(a.primaryItemHash);
+                if (hashItemHrid) {
+                    const hashItemDetails = dataManager.getItemDetails(hashItemHrid);
+                    if (hashItemDetails?.name === itemNameFromDiv) return true;
+                }
                 const itemHrid = '/items/' + itemNameFromDiv.toLowerCase().replace(/\s+/g, '_');
                 return a.primaryItemHash.includes(itemHrid);
             }

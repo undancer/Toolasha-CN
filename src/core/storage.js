@@ -9,9 +9,10 @@ class Storage {
         this.db = null;
         this.available = false;
         this.dbName = 'ToolashaDB';
-        this.dbVersion = 16; // Bumped for lootLogHistory store
+        this.dbVersion = 17; // Bumped for leaderboardHistory store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
-        this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
+        this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName, resolvers, generation}
+        this._writeGeneration = new Map(); // Per-key monotonic generation counter
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
         this._reconnecting = false; // Guard against concurrent reconnection attempts
         this._dbNulledReason = null; // Track why db was last set to null
@@ -161,6 +162,11 @@ class Storage {
                 if (!db.objectStoreNames.contains('lootLogHistory')) {
                     db.createObjectStore('lootLogHistory');
                 }
+
+                // Create leaderboardHistory store if it doesn't exist (for leaderboard XP tracker)
+                if (!db.objectStoreNames.contains('leaderboardHistory')) {
+                    db.createObjectStore('leaderboardHistory');
+                }
             };
         });
     }
@@ -185,7 +191,7 @@ class Storage {
                 const request = store.get(key);
 
                 request.onsuccess = () => {
-                    resolve(request.result !== undefined ? request.result : defaultValue);
+                    resolve(request.result != null ? request.result : defaultValue);
                 };
 
                 request.onerror = () => {
@@ -256,7 +262,9 @@ class Storage {
         const existing = this.pendingWrites.get(timerKey);
         const resolvers = existing?.resolvers || [];
 
-        this.pendingWrites.set(timerKey, { value, storeName, resolvers });
+        const generation = (this._writeGeneration.get(timerKey) || 0) + 1;
+        this._writeGeneration.set(timerKey, generation);
+        this.pendingWrites.set(timerKey, { value, storeName, resolvers, generation });
 
         if (this.saveDebounceTimers.has(timerKey)) {
             clearTimeout(this.saveDebounceTimers.get(timerKey));
@@ -266,17 +274,43 @@ class Storage {
             resolvers.push(resolve);
 
             const timer = setTimeout(async () => {
-                const pending = this.pendingWrites.get(timerKey);
-                this.pendingWrites.delete(timerKey);
                 this.saveDebounceTimers.delete(timerKey);
 
-                let success = false;
-                if (pending) {
-                    success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+                const pending = this.pendingWrites.get(timerKey);
+                if (!pending || pending.generation !== generation) {
+                    // A newer write arrived and owns this slot — do nothing.
+                    // The newer timer will handle persistence and resolve all coalesced callers.
+                    return;
                 }
 
-                for (const r of pending?.resolvers || []) {
-                    r(success);
+                // Take ownership: remove from queue before attempting save
+                // so a concurrent newer write can claim the slot cleanly.
+                this.pendingWrites.delete(timerKey);
+
+                const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+
+                if (!success) {
+                    // Requeue without a timer so the value survives for the next
+                    // flushAll() or the next debounced write to this key.
+                    if (!this.pendingWrites.has(timerKey)) {
+                        this.pendingWrites.set(timerKey, {
+                            value: pending.value,
+                            storeName: pending.storeName,
+                            resolvers: pending.resolvers,
+                            generation: pending.generation,
+                        });
+                    }
+                    // A newer write already reclaimed the slot — resolve callers with false.
+                    else {
+                        for (const r of pending.resolvers) {
+                            r(false);
+                        }
+                    }
+                    return;
+                }
+
+                for (const r of pending.resolvers) {
+                    r(true);
                 }
             }, this.SAVE_DEBOUNCE_DELAY);
 
@@ -456,17 +490,32 @@ class Storage {
         }
         this.saveDebounceTimers.clear();
 
-        // Now execute all pending writes immediately and resolve their Promises
+        // Snapshot the current pending writes; do not clear the map upfront.
+        // Each entry is only removed after its write succeeds to preserve durability.
         const writes = Array.from(this.pendingWrites.entries());
-        this.pendingWrites.clear();
 
         for (const [timerKey, pending] of writes) {
+            // Skip if a newer write has already replaced this entry.
+            if (this.pendingWrites.get(timerKey) !== pending) continue;
+
             const colonIndex = timerKey.indexOf(':');
             const key = timerKey.substring(colonIndex + 1);
 
             const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
-            for (const r of pending.resolvers || []) {
-                r(success);
+
+            if (success) {
+                // Only remove if no newer write has claimed the slot since we started.
+                if (this.pendingWrites.get(timerKey) === pending) {
+                    this.pendingWrites.delete(timerKey);
+                }
+                for (const r of pending.resolvers || []) {
+                    r(true);
+                }
+            } else {
+                // Leave the entry in pendingWrites so reconnect / next flush can retry.
+                for (const r of pending.resolvers || []) {
+                    r(false);
+                }
             }
         }
     }
@@ -489,6 +538,7 @@ class Storage {
             }
         }
         this.pendingWrites.clear();
+        this._writeGeneration.clear();
     }
 
     /**

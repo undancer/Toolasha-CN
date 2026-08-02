@@ -261,17 +261,20 @@ function showBreakdownModal(budget, result) {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
-    const close = () => overlay.remove();
+    const close = () => {
+        overlay.remove();
+        document.removeEventListener('keydown', onEsc);
+    };
     overlay.querySelector('#mwi-budget-modal-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) close();
     });
-    document.addEventListener('keydown', function onEsc(e) {
+    function onEsc(e) {
         if (e.key === 'Escape') {
             close();
-            document.removeEventListener('keydown', onEsc);
         }
-    });
+    }
+    document.addEventListener('keydown', onEsc);
 }
 
 class BudgetCalculator {
@@ -280,7 +283,7 @@ class BudgetCalculator {
         this.unregisterHandlers = [];
         this.timerRegistry = createTimerRegistry();
         this.processedPanels = new WeakSet();
-        this.panelObservers = new WeakMap();
+        this.panelObservers = new Map();
     }
 
     initialize() {
@@ -473,8 +476,8 @@ class BudgetCalculator {
         document.getElementById('mwi-budget-modal-overlay')?.remove();
 
         // Disconnect all panel observers
-        // (WeakMap entries are cleaned up automatically as panels are GC'd)
-
+        this.panelObservers.forEach((obs) => obs.disconnect());
+        this.panelObservers = new Map();
         this.processedPanels = new WeakSet();
         this.isInitialized = false;
     }

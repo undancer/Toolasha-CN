@@ -93,6 +93,7 @@ class TeaRecommendation {
         this.currentPopup = null;
         this.buttonContainer = null;
         this.closeHandlerCleanup = null;
+        this.dragCleanup = null;
         this.pinnedTeas = new Set();
         this.bannedTeas = new Set();
     }
@@ -373,7 +374,7 @@ class TeaRecommendation {
             header.textContent = t('Optimal {0}/hr for {1}', goalLabel, displayName + dcSuffix);
         }
         popup.appendChild(header);
-        this.makeDraggable(popup, header);
+        this.dragCleanup = this.makeDraggable(popup, header);
 
         // Optimal teas list (or "no valid combinations" warning when constraints eliminate all combos)
         if (!result.optimal) {
@@ -941,7 +942,7 @@ class TeaRecommendation {
         header.title = t('Drag to move');
         popup.appendChild(header);
 
-        this.makeDraggable(popup, header);
+        this.dragCleanup = this.makeDraggable(popup, header);
 
         // Two-column container
         const columns = document.createElement('div');
@@ -1127,6 +1128,10 @@ class TeaRecommendation {
             this.closeHandlerCleanup();
             this.closeHandlerCleanup = null;
         }
+        if (this.dragCleanup) {
+            this.dragCleanup();
+            this.dragCleanup = null;
+        }
         if (this.currentPopup) {
             this.currentPopup.remove();
             this.currentPopup = null;
@@ -1156,7 +1161,7 @@ class TeaRecommendation {
             e.preventDefault();
         });
 
-        document.addEventListener('mousemove', (e) => {
+        const onMouseMove = (e) => {
             if (!isDragging) return;
 
             hasDragged = true;
@@ -1165,9 +1170,9 @@ class TeaRecommendation {
 
             element.style.left = `${initialX + dx}px`;
             element.style.top = `${initialY + dy}px`;
-        });
+        };
 
-        document.addEventListener('mouseup', () => {
+        const onMouseUp = () => {
             if (isDragging) {
                 isDragging = false;
                 handle.style.cursor = 'grab';
@@ -1180,7 +1185,15 @@ class TeaRecommendation {
                     document.addEventListener('click', suppressClick, true);
                 }
             }
-        });
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+
+        return () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        };
     }
 
     /**

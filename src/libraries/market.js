@@ -19,6 +19,7 @@ import estimatedListingAge from '../features/market/estimated-listing-age.js';
 import queueLengthEstimator from '../features/market/queue-length-estimator.js';
 import marketOrderTotals from '../features/market/market-order-totals.js';
 import marketHistoryViewer from '../features/market/market-history-viewer.js';
+import listingRefreshNavigator from '../features/market/listing-refresh-navigator.js';
 import philoCalculator from '../features/market/philo-calculator.js';
 import tradeHistory from '../features/market/trade-history.js';
 import tradeHistoryDisplay from '../features/market/trade-history-display.js';
@@ -26,6 +27,7 @@ import networkAlert from '../features/market/network-alert.js';
 import profitCalculator from '../features/market/profit-calculator.js';
 import alchemyProfitCalculator from '../features/market/alchemy-profit-calculator.js';
 import marketplaceShortcuts from '../features/market/marketplace-shortcuts.js';
+import sellQueue from '../features/market/sell-queue.js';
 import milkywayMarketLink from '../features/market/milkyway-market-link.js';
 
 // Networth/Economy features
@@ -62,6 +64,7 @@ toolashaRoot.Market = {
     queueLengthEstimator,
     marketOrderTotals,
     marketHistoryViewer,
+    listingRefreshNavigator,
     philoCalculator,
     tradeHistory,
     tradeHistoryDisplay,
@@ -77,6 +80,7 @@ toolashaRoot.Market = {
     inventoryCategoryTotals,
     customTabsFeature,
     marketplaceShortcuts,
+    sellQueue,
     milkywayMarketLink,
 };
 

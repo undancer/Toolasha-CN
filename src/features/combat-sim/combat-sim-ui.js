@@ -1809,35 +1809,72 @@ class CombatSimUI {
         html += `<span style="${valueStyle}">${this._formatDeaths(deathsPerHr)}${this._formatDelta(deathsPerHr, prevDeathsPerHr, false)}</span>`;
         html += '</div>';
 
-        // DPS — estimated from monster kills × max HP / time
-        if (gameData) {
-            const monsterDetailMap = gameData.combatMonsterDetailMap || {};
-            let totalDamage = 0;
-            let prevTotalDamage = 0;
-            for (const [hrid, count] of Object.entries(simResult.deaths)) {
-                if (hrid.startsWith('player')) continue;
-                const monster = monsterDetailMap[hrid];
-                if (monster?.combatDetails?.maxHitpoints) {
-                    totalDamage += count * monster.combatDetails.maxHitpoints;
-                }
-            }
-            const dps = totalDamage / (hours * 3600);
-            this._lastComputedDps = dps;
-            let prevDps = null;
-            if (hasPrev) {
-                for (const [hrid, count] of Object.entries(compResult.deaths)) {
-                    if (hrid.startsWith('player')) continue;
-                    const monster = monsterDetailMap[hrid];
-                    if (monster?.combatDetails?.maxHitpoints) {
-                        prevTotalDamage += count * monster.combatDetails.maxHitpoints;
-                    }
-                }
-                prevDps = prevTotalDamage / (compHours * 3600);
-            }
+        // Mana Run Out
+        const ranOutOfMana = simResult.playerRanOutOfMana?.[activeTab] ?? false;
+        const oomColor = ranOutOfMana ? '#ff6b6b' : '#4ade80';
+        html += `<div style="${rowStyle}">`;
+        html += `<span style="${labelStyle}">Mana Run Out</span>`;
+        html += `<span style="color:${oomColor}; font-weight:600;">${ranOutOfMana ? 'Yes' : 'No'}</span>`;
+        html += '</div>';
+        if (ranOutOfMana && simResult.playerRanOutOfManaTime?.[activeTab] && simResult.simulatedTime) {
+            const stat = simResult.playerRanOutOfManaTime[activeTab];
+            const openWindow = stat.isOutOfMana ? simResult.simulatedTime - stat.startTimeForOutOfMana : 0;
+            const totalOomTime = stat.totalTimeForOutOfMana + openWindow;
+            const oomRatio = ((totalOomTime / simResult.simulatedTime) * 100).toFixed(2);
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">${t('Party DPS (est.)')}</span>`;
-            html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(dps))}${this._formatDelta(dps, prevDps)}</span>`;
+            html += `<span style="${labelStyle}">Run Out Ratio</span>`;
+            html += `<span style="color:#ff6b6b; font-weight:600;">${oomRatio}%</span>`;
             html += '</div>';
+        }
+
+        // Debuff on level gap — only shown when non-zero
+        const debuff = simResult.debuffOnLevelGap?.[activeTab] ?? 0;
+        if (debuff !== 0) {
+            html += `<div style="${rowStyle}">`;
+            html += `<span style="${labelStyle}">Debuff on Level Gap</span>`;
+            html += `<span style="color:#ff6b6b; font-weight:600;">${Math.round(Math.abs(debuff) * 100)}%</span>`;
+            html += '</div>';
+        }
+
+        // DPS — from actual damage dealt per player
+        if (simResult.totalDamageDealt && simResult.simulatedTime > 0) {
+            const simSeconds = simResult.simulatedTime / 1e9;
+            let partyDamage = 0;
+            for (const { hrid } of playerInfo) {
+                partyDamage += simResult.totalDamageDealt[hrid] || 0;
+            }
+            const partyDps = partyDamage / simSeconds;
+            this._lastComputedDps = partyDps;
+
+            let prevPartyDps = null;
+            if (hasPrev && compResult.totalDamageDealt && compResult.simulatedTime > 0) {
+                const compSimSeconds = compResult.simulatedTime / 1e9;
+                let prevDamage = 0;
+                for (const { hrid } of playerInfo) {
+                    prevDamage += compResult.totalDamageDealt[hrid] || 0;
+                }
+                prevPartyDps = prevDamage / compSimSeconds;
+            }
+
+            const dpsLabel = numberOfPlayers > 1 ? 'Party DPS' : 'DPS';
+            html += `<div style="${rowStyle}">`;
+            html += `<span style="${labelStyle}">${dpsLabel}</span>`;
+            html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(partyDps))}${this._formatDelta(partyDps, prevPartyDps)}</span>`;
+            html += '</div>';
+
+            if (numberOfPlayers > 1) {
+                for (const { hrid, name } of playerInfo) {
+                    const playerDps = (simResult.totalDamageDealt[hrid] || 0) / simSeconds;
+                    let prevPlayerDps = null;
+                    if (hasPrev && compResult.totalDamageDealt && compResult.simulatedTime > 0) {
+                        prevPlayerDps = (compResult.totalDamageDealt[hrid] || 0) / (compResult.simulatedTime / 1e9);
+                    }
+                    html += `<div style="${rowStyle}">`;
+                    html += `<span style="color:#888; padding-left:12px;">${name}</span>`;
+                    html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(playerDps))}${this._formatDelta(playerDps, prevPlayerDps)}</span>`;
+                    html += '</div>';
+                }
+            }
         }
 
         // Dungeon stats if applicable
@@ -2227,6 +2264,83 @@ class CombatSimUI {
         html += '</div>';
         html += '</div>';
 
+        // Wipe Events
+        const wipeEvents = simResult.wipeEvents;
+        if (wipeEvents && wipeEvents.length > 0) {
+            html += `<div style="${sectionStyle}">`;
+            html += `<div style="${headingStyle}">Wipe Events (${wipeEvents.length})</div>`;
+            for (let wi = 0; wi < wipeEvents.length; wi++) {
+                const event = wipeEvents[wi];
+                const wave = event.wave ?? '?';
+                const timeSec = ((event.simulationTime || 0) / 1e9).toFixed(2);
+                const eventId = `mwi-wipe-${wi}`;
+                html += `<div style="margin-bottom:6px; border:1px solid #333; border-radius:4px; overflow:hidden;">`;
+                html += `<div id="${eventId}-header" data-wipe-toggle="${wi}" style="
+                    display:flex; justify-content:space-between; align-items:center;
+                    padding:4px 8px; background:#1a1a1a; cursor:pointer; font-size:12px;
+                ">`;
+                html += `<span style="color:#aaa;">Wipe #${wi + 1} — Wave ${wave} @ ${timeSec}s</span>`;
+                html += `<span style="color:#666; font-size:10px;">▶</span>`;
+                html += `</div>`;
+                html += `<div id="${eventId}-body" style="display:none; padding:6px 8px; font-size:11px; font-family:monospace; background:#111; max-height:300px; overflow-y:auto;">`;
+
+                // Group logs by time
+                const logs = event.logs || [];
+                const groups = [];
+                for (const log of logs) {
+                    if (log?.error) continue;
+                    const last = groups[groups.length - 1];
+                    if (last && last.time === log.time) {
+                        last.logs.push(log);
+                    } else {
+                        groups.push({ time: log.time, wave: log.wave, logs: [log] });
+                    }
+                }
+
+                const baseTime = groups.length > 0 ? groups[0].time : 0;
+                for (const group of groups) {
+                    const rel = ((group.time - baseTime) / 1e9).toFixed(2);
+                    html += `<div style="margin-top:6px; color:#666; border-top:1px solid #222; padding-top:4px;">[+${rel}s] Wave ${group.wave ?? '?'}</div>`;
+                    const damagedPlayers = new Set(group.logs.map((l) => l.target));
+                    for (const log of group.logs) {
+                        const abilityLabel =
+                            log.ability === 'autoAttack'
+                                ? 'Auto Attack'
+                                : log.ability === 'damageOverTime'
+                                  ? 'DoT'
+                                  : log.ability === 'physicalThorns'
+                                    ? 'Physical Thorns'
+                                    : log.ability === 'elementalThorns'
+                                      ? 'Elemental Thorns'
+                                      : log.ability === 'retaliation'
+                                        ? 'Retaliation'
+                                        : log.ability;
+                        const critMark = log.isCrit ? '!!!' : '';
+                        html += `<div style="padding:1px 0; color:#ccc;">`;
+                        html += `<span style="color:#9ca3af;">${log.source}</span>`;
+                        html += ` cast <span style="color:#c4b5fd;">${abilityLabel}</span>`;
+                        html += ` → <span style="color:#93c5fd;">${log.target}</span>`;
+                        html += ` <span style="color:#ff6b6b;">${log.damage}${critMark}</span>`;
+                        html += ` <span style="color:#666;">HP ${log.beforeHp}→${log.afterHp}</span>`;
+                        html += `</div>`;
+                    }
+                    // Players HP summary at end of each time group
+                    if (group.logs.length > 0 && group.logs[group.logs.length - 1].playersHp) {
+                        const playersHp = group.logs[group.logs.length - 1].playersHp;
+                        const hpParts = playersHp.map((p) => {
+                            const color = p.current <= 0 ? '#ff6b6b' : damagedPlayers.has(p.hrid) ? '#93c5fd' : '#666';
+                            return `<span style="color:${color};">${p.hrid}: ${p.current}/${p.max}</span>`;
+                        });
+                        html += `<div style="padding:2px 0; font-size:10px;">Players HP: ${hpParts.join(' | ')}</div>`;
+                    }
+                }
+
+                html += `</div>`; // body
+                html += `</div>`; // card
+            }
+            html += `</div>`;
+        }
+
         container.innerHTML = html;
         container.style.display = 'block';
 
@@ -2291,6 +2405,20 @@ class CombatSimUI {
             });
         });
 
+        // Wipe event collapsible toggles
+        container.querySelectorAll('[data-wipe-toggle]').forEach((header) => {
+            header.addEventListener('click', () => {
+                const wi = header.dataset.wipeToggle;
+                const body = container.querySelector(`#mwi-wipe-${wi}-body`);
+                const arrow = header.querySelector('span:last-child');
+                if (body) {
+                    const isOpen = body.style.display !== 'none';
+                    body.style.display = isOpen ? 'none' : 'block';
+                    if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+                }
+            });
+        });
+
         // History collapsible toggle
         container.querySelectorAll('[data-toggle="history-section"]').forEach((el) => {
             el.addEventListener('click', () => {
@@ -2332,17 +2460,13 @@ class CombatSimUI {
         // Encounters
         const encountersPerHr = simResult.encounters / hours;
 
-        // DPS from monster kills × HP
+        // DPS from actual damage dealt
+        const simSeconds = simResult.simulatedTime > 0 ? simResult.simulatedTime / 1e9 : hours * 3600;
         let totalDamage = 0;
-        const monsterDetailMap = gameData?.combatMonsterDetailMap || {};
-        for (const [hrid, count] of Object.entries(simResult.deaths)) {
-            if (hrid.startsWith('player')) continue;
-            const monster = monsterDetailMap[hrid];
-            if (monster?.combatDetails?.maxHitpoints) {
-                totalDamage += count * monster.combatDetails.maxHitpoints;
-            }
+        for (const [hrid, damage] of Object.entries(simResult.totalDamageDealt || {})) {
+            if (hrid.startsWith('player')) totalDamage += damage;
         }
-        const dps = totalDamage / (hours * 3600);
+        const dps = simSeconds > 0 ? totalDamage / simSeconds : 0;
 
         // XP/hr for active player
         let totalXpPerHr = 0;
