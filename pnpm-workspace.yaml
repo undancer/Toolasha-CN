@@ -1,0 +1,4 @@
+# pnpm 11 配置（新设置在 pnpm-workspace.yaml，package.json 中的 pnpm 字段已被移除）
+# 允许 esbuild 等依赖在安装时运行构建脚本（否则 pnpm 默认忽略并报 ERR_PNPM_IGNORED_BUILDS）
+allowBuilds:
+  esbuild: true

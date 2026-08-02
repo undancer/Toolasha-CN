@@ -1,0 +1,74 @@
+name: Release (CN)
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+        inputs:
+            skip_tests:
+                description: 'Skip tests (for rapid iteration)'
+                required: false
+                default: 'false'
+                type: boolean
+
+permissions:
+    contents: write
+
+jobs:
+    build-and-release:
+        # Run only on direct push to main (skip release-please release commits)
+        if: >
+            (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore(main): release')) ||
+            github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v6
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 11
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: '22'
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Run tests
+              if: ${{ inputs.skip_tests != 'true' }}
+              run: pnpm test
+
+            - name: Build
+              run: pnpm run vite:build
+
+            - name: Commit built file to releases branch
+              run: |
+                  # 保存产物（dist 被 .gitignore 忽略，需复制到 /tmp 再提交）
+                  cp dist/Toolasha.user.js /tmp/Toolasha.user.js
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  # 切换到 releases 分支；不存在则创建 orphan 分支
+                  git fetch origin releases:releases 2>/dev/null || git checkout --orphan releases
+                  git checkout releases 2>/dev/null || git checkout --orphan releases
+                  git rm -rf . 2>/dev/null || true
+                  mkdir -p dist
+                  cp /tmp/Toolasha.user.js dist/Toolasha.user.js
+                  git add dist/Toolasha.user.js
+                  git commit -m "chore(main): release ${{ github.sha }}"
+                  git push origin releases --force
+
+            - name: Upload release asset
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ github.sha }}
+                  name: Release ${{ github.sha }}
+                  generate_release_notes: false
+                  files: dist/Toolasha.user.js
+                  draft: false
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
