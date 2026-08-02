@@ -20,25 +20,26 @@ import { calculateGatheringProfit } from './gathering-profit.js';
 import profitCalculator from '../market/profit-calculator.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
-import { timeReadable, formatWithSeparator, formatDateTime } from '../../utils/formatters.js';
+import { formatDateTime, formatWithSeparator, timeReadable } from '../../utils/formatters.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import {
-    parseArtisanBonus,
     getDrinkConcentration,
+    parseArtisanBonus,
     parseGatheringBonus,
     parseGourmetBonus,
 } from '../../utils/tea-parser.js';
 import { getAlchemySuccessBonus } from '../../utils/buff-parser.js';
 import {
-    calculateProductionActionTotalsFromBase,
-    calculateGatheringActionTotalsFromBase,
     calculateActionsPerHour,
     calculateEffectiveActionsPerHour,
+    calculateGatheringActionTotalsFromBase,
+    calculateProductionActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
 import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
 import { BASE_SUCCESS_RATES } from '../../utils/enhancement-calculator.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * Format a completion Date as a clock string, respecting user's time/date format settings.
@@ -300,7 +301,8 @@ class ActionTimeDisplay {
                 const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
 
                 if (!actionObj) {
-                    this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                    // this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                    this.appendTimeToActionDiv(actionDiv, t('[Unknown action]'));
                     continue;
                 }
 
@@ -2204,7 +2206,8 @@ class ActionTimeDisplay {
                         font-size: 0.85em;
                         margin-top: 2px;
                     `;
-                    timeDiv.textContent = '[Unknown action]';
+                    // timeDiv.textContent = '[Unknown action]';
+                    timeDiv.textContent = t('[Unknown action]');
 
                     const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
                     if (actionTextContainer) {

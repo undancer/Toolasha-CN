@@ -8,6 +8,7 @@ import { t } from './i18n.js';
 import settingsStorage from './settings-storage.js';
 import { settingsGroups } from './settings-schema.js';
 import dataManager from './data-manager.js';
+import { getSiteOrigin } from '../utils/site-origin.js';
 
 /**
  * Config class manages all script configuration
@@ -63,7 +64,7 @@ class Config {
         this.Z_NOTIFICATION = 99999; // Transient notifications (above everything)
 
         // Market API URL
-        this.MARKET_API_URL = 'https://www.milkywayidle.com/game_data/marketplace.json';
+        this.MARKET_API_URL = `${getSiteOrigin()}/game_data/marketplace.json`;
 
         // Settings loaded from settings-schema via settings-storage.js
         this.settingsMap = {};

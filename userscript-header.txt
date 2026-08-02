@@ -10,6 +10,7 @@
 // @license      CC-BY-NC-SA-4.0
 // @run-at       document-start
 // @match        https://www.milkywayidle.com/*
+// @match        https://milkywayidlecn.com/*
 // @match        https://test.milkywayidle.com/*
 // @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
 // @grant        GM_addStyle

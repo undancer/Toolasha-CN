@@ -45,10 +45,20 @@
                 constructor(...args) {
                     super(...args);
 
-                    if (this.url.startsWith("wss://api.milkywayidle.com/ws") ||
-                        this.url.startsWith("wss://api-test.milkywayidle.com/ws")) {
+                    const matchers = [
+                        'wss://api.milkywayidle.com/ws',
+                        'wss://api-test.milkywayidle.com/ws',
+                        'wss://api.milkywayidlecn.com/ws',
+                    ];
 
-                        this.addEventListener("message", (event) => {
+                    const isAllowed = ((url, rules) => {
+                        return rules.some((rule) => {
+                            return url.startsWith(rule);
+                        });
+                    })(this.url, matchers);
+
+                    if (isAllowed) {
+                        this.addEventListener('message', (event) => {
                             viewer.onMessage(event.data);
                         });
                     }
@@ -60,19 +70,19 @@
                 value: OriginalWebSocket.CONNECTING,
                 writable: false,
                 enumerable: true,
-                configurable: true
+                configurable: true,
             });
             Object.defineProperty(WrappedWebSocket, 'OPEN', {
                 value: OriginalWebSocket.OPEN,
                 writable: false,
                 enumerable: true,
-                configurable: true
+                configurable: true,
             });
             Object.defineProperty(WrappedWebSocket, 'CLOSED', {
                 value: OriginalWebSocket.CLOSED,
                 writable: false,
                 enumerable: true,
-                configurable: true
+                configurable: true,
             });
 
             window.WebSocket = WrappedWebSocket;
@@ -89,7 +99,7 @@
                     timestamp: new Date(),
                     type: data.type || 'unknown',
                     data: data,
-                    raw: rawMessage
+                    raw: rawMessage,
                 };
 
                 this.messages.unshift(message);
@@ -410,19 +420,21 @@
 
         updateMessageTypes() {
             // Get unique message types
-            const types = new Set(this.messages.map(m => m.type));
+            const types = new Set(this.messages.map((m) => m.type));
             const filter = document.getElementById('ws-filter');
 
             // Keep "all" option, add others
             const currentValue = filter.value;
             filter.innerHTML = '<option value="all">All Messages</option>';
 
-            Array.from(types).sort().forEach(type => {
-                const option = document.createElement('option');
-                option.value = type;
-                option.textContent = type;
-                filter.appendChild(option);
-            });
+            Array.from(types)
+                .sort()
+                .forEach((type) => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    filter.appendChild(option);
+                });
 
             filter.value = currentValue;
         }
@@ -434,22 +446,23 @@
             let filtered = this.messages;
 
             if (this.selectedFilter !== 'all') {
-                filtered = filtered.filter(m => m.type === this.selectedFilter);
+                filtered = filtered.filter((m) => m.type === this.selectedFilter);
             }
 
             if (this.searchTerm) {
-                filtered = filtered.filter(m =>
-                    m.raw.toLowerCase().includes(this.searchTerm)
-                );
+                filtered = filtered.filter((m) => m.raw.toLowerCase().includes(this.searchTerm));
             }
 
             if (filtered.length === 0) {
-                container.innerHTML = '<p style="color: #9ca3af; font-family: monospace; text-align: center; padding: 20px;">No matching messages</p>';
+                container.innerHTML =
+                    '<p style="color: #9ca3af; font-family: monospace; text-align: center; padding: 20px;">No matching messages</p>';
                 return;
             }
 
             // Render messages
-            container.innerHTML = filtered.map((msg, idx) => `
+            container.innerHTML = filtered
+                .map(
+                    (msg, idx) => `
                 <div class="ws-message">
                     <div class="ws-message-header" onclick="document.getElementById('ws-body-${idx}').classList.toggle('expanded')">
                         <span class="ws-message-type">${this.escapeHtml(msg.type)}</span>
@@ -462,13 +475,15 @@
                         <pre>${this.escapeHtml(JSON.stringify(msg.data, null, 2))}</pre>
                     </div>
                 </div>
-            `).join('');
+            `
+                )
+                .join('');
         }
 
         updateStats() {
             const stats = document.getElementById('ws-stats');
             const types = {};
-            this.messages.forEach(m => {
+            this.messages.forEach((m) => {
                 types[m.type] = (types[m.type] || 0) + 1;
             });
 

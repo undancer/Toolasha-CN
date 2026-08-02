@@ -7,6 +7,7 @@ import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
+import { getSiteOrigin } from '../../utils/site-origin.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class EmptyQueueNotification {
@@ -121,7 +122,8 @@ class EmptyQueueNotification {
             // Use standard Notification API
             const notification = new Notification(t('Milky Way Idle'), {
                 body: t('Your action queue is empty!'),
-                icon: 'https://www.milkywayidle.com/favicon.ico',
+                // icon: 'https://www.milkywayidle.com/favicon.ico',
+                icon: `${getSiteOrigin()}/favicon.ico`,
                 tag: 'empty-queue',
                 requireInteraction: false,
             });

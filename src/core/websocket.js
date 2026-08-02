@@ -157,10 +157,30 @@ class WebSocketHook {
             return false;
         }
 
-        return (
-            socket.url.indexOf('api.milkywayidle.com/ws') !== -1 ||
-            socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1
-        );
+        const matchers = [
+            'api.milkywayidle.com/ws',
+            'api-test.milkywayidle.com/ws',
+            'api.milkywayidlecn.com/ws',
+            // /^.*$/,
+        ];
+
+        return ((url, rules) => {
+            return rules.some((rule) => {
+                if (typeof rule === 'string') {
+                    // return rule.includes(url);
+                    return url.indexOf(rule) !== -1;
+                    // } else {
+                    //     return false;
+                }
+            });
+        })(socket.url, matchers);
+
+        // return (
+        //     socket.url.indexOf('api.milkywayidle.com/ws') !== -1 ||
+        //     socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1 ||
+        //     socket.url.indexOf('api.milkywayidlecn.com/ws') !== -1 ||
+        //     false
+        // );
     }
 
     /**

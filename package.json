@@ -4,12 +4,14 @@
     "description": "Toolasha - Enhanced tools for Milky Way Idle",
     "type": "module",
     "scripts": {
-        "build": "BUILD_MODE=production rollup -c",
-        "build:dev": "BUILD_TARGET=dev-standalone rollup -c",
+        "build": "rollup -c --environment BUILD_MODE:production",
+        "build:dev": "rollup -c --environment BUILD_TARGET:dev-standalone",
         "build:enhancement": "rollup -c rollup.config.enhancement.js",
         "build:all": "npm run build && npm run build:enhancement",
         "watch": "rollup -c -w",
         "dev": "rollup -c -w",
+        "vite:dev": "vite",
+        "vite:build": "vite build",
         "test": "vitest run",
         "test:watch": "vitest",
         "lint": "eslint src/",
@@ -50,6 +52,8 @@
         "prettier": "^3.8.1",
         "rollup": "^4.9.5",
         "rollup-plugin-banner2": "^1.2.2",
+        "vite": "^8.2.0",
+        "vite-plugin-monkey": "^8.1.0",
         "vitest": "^4.0.18"
     },
     "lint-staged": {
