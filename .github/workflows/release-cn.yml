@@ -44,31 +44,36 @@ jobs:
               run: pnpm test
 
             - name: Build
-              run: pnpm run vite:build
+              run: |
+                  pnpm run vite:build:prod
+                  pnpm run build:enhancement
 
-            - name: Commit built file to releases branch
+            - name: Commit built files to releases branch
               run: |
                   # 保存产物（dist 被 .gitignore 忽略，需复制到 /tmp 再提交）
-                  cp dist/Toolasha.user.js /tmp/Toolasha.user.js
+                  cp -r dist /tmp/dist-artifacts
                   git config user.name "github-actions[bot]"
                   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
                   # 切换到 releases 分支；不存在则创建 orphan 分支
                   git fetch origin releases:releases 2>/dev/null || git checkout --orphan releases
                   git checkout releases 2>/dev/null || git checkout --orphan releases
                   git rm -rf . 2>/dev/null || true
-                  mkdir -p dist
-                  cp /tmp/Toolasha.user.js dist/Toolasha.user.js
-                  git add dist/Toolasha.user.js
+                  mkdir -p dist/libraries
+                  cp /tmp/dist-artifacts/Toolasha.user.js dist/Toolasha.user.js
+                  cp /tmp/dist-artifacts/libraries/*.js dist/libraries/
+                  git add dist
                   git commit -m "chore(main): release ${{ github.sha }}"
                   git push origin releases --force
 
-            - name: Upload release asset
+            - name: Upload release assets
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: v${{ github.sha }}
                   name: Release ${{ github.sha }}
                   generate_release_notes: false
-                  files: dist/Toolasha.user.js
+                  files: |
+                      dist/Toolasha.user.js
+                      dist/libraries/*
                   draft: false
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

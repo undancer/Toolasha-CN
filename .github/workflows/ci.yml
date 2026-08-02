@@ -43,14 +43,18 @@ jobs:
               run: pnpm test
 
             - name: Build
-              run: pnpm run vite:build
+              run: |
+                  pnpm run vite:build:prod
+                  pnpm run build:enhancement
 
             - name: Verify bundle size
               run: |
                   limit=2097152
-                  size=$(wc -c < "dist/Toolasha.user.js")
-                  if [ "$size" -gt "$limit" ]; then
-                    echo "❌ dist/Toolasha.user.js is over 2MB limit ($size bytes)"
-                    exit 1
-                  fi
-                  echo "✅ dist/Toolasha.user.js is under 2MB ($size bytes)"
+                  for f in dist/Toolasha.user.js dist/libraries/*.js; do
+                    size=$(wc -c < "$f")
+                    if [ "$size" -gt "$limit" ]; then
+                      echo "❌ $f is over 2MB limit ($size bytes)"
+                      exit 1
+                    fi
+                    echo "✅ $f is under 2MB ($size bytes)"
+                  done

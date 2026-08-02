@@ -12,6 +12,8 @@
         "dev": "rollup -c -w",
         "vite:dev": "vite",
         "vite:build": "vite build",
+        "vite:build:dev": "vite build --config vite.config.dev.ts",
+        "vite:build:prod": "vite build --config vite.config.prod.ts",
         "test": "vitest run",
         "test:watch": "vitest",
         "lint": "eslint src/",
