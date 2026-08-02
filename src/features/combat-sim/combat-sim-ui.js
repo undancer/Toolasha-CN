@@ -751,17 +751,36 @@ class CombatSimUI {
             label.innerHTML = `<input type="checkbox" class="mwi-csim-zone-cb" data-hrid="${zone.hrid}" checked style="margin:0; cursor:pointer;"> ${getZoneDisplayName(zone)}`;
             checklist.appendChild(label);
         }
+
+        // Check All toggle
+        checklist.querySelector(`#${checkAllId}`).addEventListener('change', (e) => {
+            checklist.querySelectorAll('.mwi-csim-zone-cb').forEach((cb) => {
+                cb.checked = e.target.checked;
+            });
+        });
     }
 
-    startAllZonesSimulation() {
-        // eslint-disable-next-line no-unused-vars
-        const hours = parseFloat(this.panel?.querySelector('#mwi-csim-hours')?.value) || 100;
+    /**
+     * Get selected zones expanded into all difficulty tiers.
+     * @returns {Array<{zoneHrid: string, difficultyTier: number, name: string}>}
+     * @private
+     */
+    _getSelectedAllZones() {
+        const checklist = this.panel?.querySelector('#mwi-csim-zone-checklist');
+        if (!checklist) return [];
+
+        const allZones = getCombatZones();
         const selected = [];
-        for (const zone of getCombatZones()) {
-            for (let t = 1; t <= zone.maxTier; t++) {
+
+        checklist.querySelectorAll('.mwi-csim-zone-cb:checked').forEach((cb) => {
+            const hrid = cb.dataset.hrid;
+            const zone = allZones.find((z) => z.hrid === hrid);
+            if (!zone) return;
+
+            for (let t = 0; t <= zone.maxDifficulty; t++) {
                 selected.push({ zoneHrid: zone.hrid, difficultyTier: t, name: getZoneDisplayName(zone) });
             }
-        }
+        });
 
         return selected;
     }
